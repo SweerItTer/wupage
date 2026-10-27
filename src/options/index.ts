@@ -189,7 +189,7 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
         data-provider-id="${escapeAttr(provider.id)}"
         aria-selected="${provider.id === settings.activeProviderId}"
         ${enabled && !unavailable ? "" : "disabled"}
-        ${unavailable ? 'title="此浏览器暂不支持豆包网页登录翻译"' : ""}
+        ${unavailable ? 'title="此浏览器暂不支持豆包翻译"' : ""}
       >
         <span class="provider-option-label">${escapeHtml(provider.label)}</span>
       </button>
@@ -228,9 +228,9 @@ function renderProviderForm(): void {
     providerForm.innerHTML = `
       <div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div>
       <div class="doubao-setup">
-        <h3>豆包网页登录翻译 · 实验功能</h3>
-        <p>无需 API key。在当前浏览器打开豆包并完成登录后，即可直接翻译。扩展会自动准备连接；“重新检测”用于检查连接，不是每次翻译的必需步骤。</p>
-        <p>翻译时，待译文本会发送到豆包；检测只发送固定短文本。请求会按顺序串行执行，暂不保证所有浏览器和账号可用。</p>
+        <h3>豆包（实验性）</h3>
+        <p>无需 API Key。在当前浏览器打开豆包并登录，即可开始翻译。连接异常时可点击“重新检测”。</p>
+        <p>翻译会将待译文本发送到豆包；检测只发送固定短文本。</p>
         <div class="doubao-actions">
           <button type="button" data-action="open-doubao">打开豆包并登录</button>
           <button type="button" data-action="check-doubao">重新检测</button>

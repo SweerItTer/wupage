@@ -610,8 +610,6 @@ function applyMenuSettings(menu: HTMLElement, settings: ExtensionSettings): void
   menu.querySelectorAll<HTMLButtonElement>("[data-action='display-mode']").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.mode === settings.translationDisplayMode));
   });
-  const button = document.getElementById(FLOATING_ID);
-  if (button && !menu.hidden) positionMenu(menu, button);
   refreshTranslationState();
 }
 
@@ -1190,8 +1188,7 @@ function applyFloatingBallVisibility(): void {
 }
 
 async function updateLanguages(menu: HTMLElement): Promise<void> {
-  const sourceSelect = menu.querySelector<HTMLSelectElement>("[data-role='source-lang']");
-  const sourceLang = sourceSelect?.value;
+  const sourceLang = menu.querySelector<HTMLSelectElement>("[data-role='source-lang']")?.value;
   const targetLang = menu.querySelector<HTMLSelectElement>("[data-role='target-lang']")?.value;
   if (!sourceLang || !targetLang) return;
   await updateFloatingSettings(menu, { sourceLang, targetLang });
@@ -1212,7 +1209,6 @@ function updateFloatingSettings(menu: HTMLElement, patch: Partial<ExtensionSetti
     menuErrorCode = undefined;
     menuRetryAt = undefined;
     applyMenuSettings(menu, settings);
-    refreshTranslationState();
   });
   settingsSave = save;
   void save.catch(() => {

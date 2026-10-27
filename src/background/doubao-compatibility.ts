@@ -26,7 +26,7 @@ function permissionError(): ProviderError {
   return new ProviderError("无法准备豆包请求，请检查扩展的站点访问权限并重新加载扩展。", "permission-required");
 }
 
-export function doubaoEndpoint(url: string): string {
+function doubaoEndpoint(url: string): string {
   const parsed = new URL(url);
   const endpoint = parsed.origin + parsed.pathname;
   if (!ENDPOINT_IDS.has(endpoint) || parsed.username || parsed.password || parsed.hash) {

@@ -68,7 +68,7 @@ describe("Doubao provider controls", () => {
     expect(source.querySelector('option[value="auto"]')?.textContent).toBe("自动检测");
     expect(document.querySelectorAll("#providerForm [data-field]")).toHaveLength(1);
     expect(document.querySelector("#providerForm .provider-performance")).toBeNull();
-    expect(query<HTMLElement>("#providerForm").textContent).toContain("按顺序串行执行");
+    expect(query<HTMLElement>("#providerForm h3").textContent).toBe("豆包（实验性）");
     expect(document.querySelector('#providerForm a[href="https://github.com/Haleclipse"]')?.textContent).toBe("Haleclipse");
     expect(document.querySelector('#providerForm a[href="https://linux.do/t/topic/2910452"]')).not.toBeNull();
     expect(createTab).not.toHaveBeenCalled();
@@ -204,7 +204,7 @@ describe("Doubao provider controls", () => {
     } else {
       expect(query<HTMLOptionElement>("#provider option[value='doubao-web']").disabled).toBe(true);
       expect(query<HTMLOptionElement>("#provider option[value='google-web-translate']").disabled).toBe(false);
-      expect(document.body.textContent).toContain("Firefox 尚未验证");
+      expect(document.body.textContent).toContain("Firefox 尚未支持");
     }
     expect(requests("CHECK_DOUBAO")).toHaveLength(0);
   });

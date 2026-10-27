@@ -489,7 +489,7 @@ async function translateTexts(request: TranslateBatchRequest, signal: AbortSigna
   taskGeneration(signal);
   if (!request.texts.length) return [];
   if (!isDoubaoBrowserSupported()) {
-    throw new ProviderError("豆包网页登录翻译目前仅在 Chromium 扩展中开放测试，Firefox 尚未支持。", "unsupported-browser");
+    throw new ProviderError("豆包（实验性）目前仅支持 Chromium 浏览器，Firefox 尚未支持。", "unsupported-browser");
   }
   const target = Object.prototype.hasOwnProperty.call(DOUBAO_TARGET_LANGUAGES, request.targetLang)
     ? DOUBAO_TARGET_LANGUAGES[request.targetLang] : undefined;
@@ -535,7 +535,7 @@ export class DoubaoProvider implements TranslatorProvider {
   validateConfig(): ValidationResult {
     return isDoubaoBrowserSupported()
       ? { ok: true }
-      : { ok: false, message: "豆包网页登录翻译目前仅在 Chromium 扩展中开放测试，Firefox 尚未支持。" };
+      : { ok: false, message: "豆包（实验性）目前仅支持 Chromium 浏览器，Firefox 尚未支持。" };
   }
   async translateBatch(request: TranslateBatchRequest, signal?: AbortSignal): Promise<string[]> {
     try {
@@ -552,7 +552,7 @@ export class DoubaoProvider implements TranslatorProvider {
 
 export function getDoubaoStatus(): DoubaoStatus {
   if (!isDoubaoBrowserSupported()) {
-    return { state: "unsupported-browser", message: "豆包网页登录翻译目前仅在 Chromium 扩展中开放测试，Firefox 尚未支持。" };
+    return { state: "unsupported-browser", message: "豆包（实验性）目前仅支持 Chromium 浏览器，Firefox 尚未支持。" };
   }
   return { ...status };
 }

@@ -1049,7 +1049,7 @@ function formatTranslationError(error: unknown): string {
 
 async function saveReaderSettings(): Promise<void> {
   const readerSettings = {
-    sourceLang: sourceLang.value.trim() || "auto",
+    sourceLang: sourceLang.value || "auto",
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value || settings.activeProviderId
   };
@@ -1091,13 +1091,11 @@ function updateDoubaoControls(): void {
     notice = document.createElement("p");
     notice.id = "doubaoProviderNotice";
     notice.setAttribute("role", "status");
-    notice.style.cssText = "margin:0;padding:8px 20px;font-size:12px;line-height:1.6;background:#f2f6f3";
     const description = document.createElement("span");
     description.dataset.role = "doubao-description";
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
     settingsButton.textContent = "登录与检测";
-    settingsButton.style.marginLeft = "8px";
     settingsButton.addEventListener("click", () => {
       void sendRuntimeMessage({ type: "OPEN_OPTIONS_PAGE" }).catch((error: unknown) => showStatus(error instanceof Error ? error.message : String(error), "error"));
     });

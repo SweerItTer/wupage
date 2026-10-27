@@ -206,6 +206,18 @@ button:disabled {
   transition: width 240ms ease;
 }
 
+#doubaoProviderNotice {
+  margin: 0;
+  padding: 8px 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #f2f6f3;
+}
+
+#doubaoProviderNotice button {
+  margin-left: 8px;
+}
+
 .welcome-view {
   width: min(1160px, calc(100% - 64px));
   min-height: calc(100vh - 75px);

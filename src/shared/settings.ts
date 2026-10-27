@@ -87,8 +87,14 @@ function normalizeProvider(
 ): ProviderConfig {
   if (provider.type === "doubao-web") {
     return {
-      type: "doubao-web", id: provider.id, label: provider.label,
-      enabled: provider.enabled !== false, performanceMode: "custom", chunkSize: 1200, concurrency: 1
+      type: "doubao-web",
+      id: provider.id,
+      label: provider.id === "doubao-web" && provider.label === "豆包（网页登录，实验）"
+        ? "豆包（实验性）" : provider.label,
+      enabled: provider.enabled !== false,
+      performanceMode: "custom",
+      chunkSize: 1200,
+      concurrency: 1
     };
   }
   if (provider.type === "deepseek"

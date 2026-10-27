@@ -48,7 +48,7 @@ async function init(): Promise<void> {
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
   provider.innerHTML = settings.providers
     .filter((entry) => entry.enabled !== false)
-    .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包网页登录翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
+    .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   provider.value = settings.activeProviderId;
   syncDoubaoTargetControls(settings, targetLang);
@@ -124,7 +124,7 @@ function saveSettingsFromControl(): void {
 function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
-    sourceLang: sourceLang.value.trim() || "auto",
+    sourceLang: sourceLang.value || "auto",
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value,
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]

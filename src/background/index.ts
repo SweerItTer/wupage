@@ -10,7 +10,7 @@ import { initializeOllamaCompatibility } from "./ollama-compatibility";
 import { requestLocal } from "./local";
 import { checkDoubao, getDoubaoStatus } from "./doubao";
 import { initializeDoubaoCompatibility } from "./doubao-compatibility";
-import { ProviderError, runtimeErrorResponse } from "../shared/errors";
+import { runtimeErrorResponse } from "../shared/errors";
 
 initImageContextMenu();
 void initializeOllamaCompatibility().catch((error: unknown) => console.warn("WuPage Ollama compatibility:", error));
@@ -92,14 +92,6 @@ async function handleMessage(request: RuntimeRequest): Promise<unknown> {
       );
       if (!providerConfig) throw new Error("Provider not found.");
       if (providerConfig.enabled === false) throw new Error("Provider is disabled.");
-      if (providerConfig.type === "doubao-web") {
-        const status = await checkDoubao();
-        if (status.state !== "ready") {
-          throw new ProviderError(status.message ?? "豆包暂时无法翻译，请重新检测。", status.state,
-            status.retryAt === undefined ? undefined : Math.max(0, status.retryAt - Date.now()));
-        }
-        return { translation: status.message ?? "可以翻译", status };
-      }
       const provider = createProvider(providerConfig);
       const validation = provider.validateConfig();
       if (!validation.ok) throw new Error(validation.message);

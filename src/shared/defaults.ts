@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
     {
       type: "doubao-web",
       id: "doubao-web",
-      label: "豆包（网页登录，实验）",
+      label: "豆包（实验性）",
       enabled: true,
       performanceMode: "custom",
       chunkSize: 1200,

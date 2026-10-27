@@ -37,6 +37,25 @@ describe("Doubao settings migration", () => {
     expect(normalizeSettings(normalized)).toEqual(normalized);
   });
 
+  it("updates the previous built-in label without overwriting custom names", () => {
+    const previousLabel = "豆包（网页登录，实验）";
+    const result = normalizeSettings({
+      activeProviderId: "doubao-web",
+      providers: [
+        { type: "doubao-web", id: "doubao-web", label: previousLabel, enabled: false },
+        { type: "doubao-web", id: "my-doubao", label: previousLabel }
+      ]
+    });
+    expect(result.providers.find((provider) => provider.id === "doubao-web"))
+      .toMatchObject({ label: "豆包（实验性）", enabled: false });
+    expect(result.providers.find((provider) => provider.id === "my-doubao")?.label).toBe(previousLabel);
+    const renamed = normalizeSettings({
+      providers: [{ type: "doubao-web", id: "doubao-web", label: "我的豆包" }]
+    });
+    expect(renamed.providers.find((provider) => provider.id === "doubao-web")?.label).toBe("我的豆包");
+    expect(normalizeSettings(result)).toEqual(result);
+  });
+
   it("preserves disabled Doubao through storage round trips and discards unsupported credential fields", async () => {
     let saved: unknown = {
       activeProviderId: "google-web-translate",

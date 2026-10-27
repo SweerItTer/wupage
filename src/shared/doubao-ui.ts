@@ -21,9 +21,9 @@ export function syncDoubaoTargetControls(
 export function doubaoProviderNotice(settings: ExtensionSettings): string | undefined {
   const provider = settings.providers.find((entry) => entry.id === settings.activeProviderId);
   if (provider?.type !== "doubao-web") return undefined;
-  if (isDoubaoProviderUnavailable(provider)) return "豆包网页登录翻译目前仅供 Chromium 浏览器实验使用，Firefox 尚未验证。请手动选择其他服务。";
+  if (isDoubaoProviderUnavailable(provider)) return "豆包（实验性）目前仅支持 Chromium 浏览器，Firefox 尚未支持。请手动选择其他服务。";
   if (!Object.hasOwn(DOUBAO_TARGET_LANGUAGES, settings.targetLang)) return "豆包暂不支持当前目标语言，请选择中文、英语、日语、韩语、法语、德语、西班牙语或俄语。";
-  return "豆包（实验）：在同一浏览器登录豆包后可直接翻译；连接异常时可到设置中重新检测。实际使用会将待译文本发送到豆包。";
+  return "豆包（实验性）：在同一浏览器登录豆包后可直接翻译；连接异常时可到设置中重新检测。待译文本会发送到豆包。";
 }
 
 const STATUS_LABELS: Record<DoubaoStatus["state"], string> = {
@@ -38,7 +38,7 @@ const STATUS_LABELS: Record<DoubaoStatus["state"], string> = {
   timeout: "豆包请求超时，请稍后重试翻译，或重新检测连接。",
   "protocol-changed": "豆包响应格式发生变化，当前版本暂时无法翻译。",
   incomplete: "豆包未返回完整译文，请重试未完成内容。",
-  "unsupported-browser": "此浏览器暂不支持豆包网页登录翻译。Chromium 为实验支持，Firefox 尚未验证。",
+  "unsupported-browser": "此浏览器暂不支持豆包翻译。请使用 Chrome / Edge。",
   "unsupported-language": "豆包暂不支持此目标语言，请选择支持的语言。"
 };
 
