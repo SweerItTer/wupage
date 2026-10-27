@@ -4,6 +4,8 @@
 
 - 基线：`SweerItTer/wupage` 的 `main`，`072c08cd9e4b83d9e224aaa662872d8b47e0c796`，版本 1.2.0。
 - 实现分支：`feature/doubao-web-translation`。
+- 评审：[PR #1](https://github.com/SweerItTer/wupage/pull/1)，目标为自身 fork 的 `main`。
+- 实现提交：`4c75651fae175d60662e3558d7deebdec937f364`；[首轮 CI](https://github.com/SweerItTer/wupage/actions/runs/40454016759) 全部通过。后续文档更新的最新检查以 PR 为准。
 - 协议参考：[Haleclipse](https://github.com/Haleclipse) 的 CometixTranslate，用户提供的油猴脚本 1.32.7.113；[Linux.do 来源](https://linux.do/t/topic/2910452/10)。按观测协议独立实现，没有复制参考脚本到仓库。
 - 执行顺序：维护者要求先实现、评审和 CI，再打包测试实际效果。以下自动化结果与真实账号验收分开记录，未执行的项目不计为通过。
 
@@ -14,13 +16,13 @@
 | 检查 | 当前结果 |
 | --- | --- |
 | TypeScript 类型检查 | `npm run typecheck` 通过 |
-| Vitest 全套测试 | 61 个文件、687 项全量通过；随后新增 1 项 OCR 缓存回归，其 11 项定向测试通过。最终集合共 688 项，由 PR CI 再次执行 |
+| Vitest 全套测试 | GitHub CI 完整执行：61 个文件、688 项通过；本地定向与全量回归亦通过 |
 | Python 发布脚本单元测试 | 7 项通过，没有执行发布 |
 | Chrome / Edge 构建 | `npm run build` 通过 |
 | Firefox 构建 | `npm run build:firefox` 通过；豆包入口禁用 |
 | content.js 经典脚本解析 | 两个构建均通过 `vm.Script` 语法解析 |
 | 本地真实 Chromium 回归 | 未运行：环境没有浏览器，Playwright Chromium 下载返回无效 ZIP；保留为待验项，不计为通过 |
-| PR CI | 已加入 PR 工作流，执行类型/全部测试/双构建/脚本校验并生成测试 ZIP；实际状态见 PR 检查 |
+| PR CI | [实现提交的 CI](https://github.com/SweerItTer/wupage/actions/runs/40454016759) 全部通过，已生成测试 ZIP 与 SHA-256；最新状态见 PR 检查 |
 
 关键合成测试覆盖：乱序 SSE、UTF-8 分块、CRLF、多行 data、正常 EOF、重复与冲突索引、缺项子集补发、共享重试预算、同语种原文返回、空/坏响应拒绝、长文本边界、保护符修复、所有入口共享队列、110 秒总预算及迟到响应、Cookie 请求策略、DNR 限定范围和清理、迁移、缓存隔离、检测竞态和登录/限流恢复。
 

@@ -4,7 +4,7 @@
   "feature": "doubao-web",
   "title": "豆包网页登录翻译：阶段实现任务",
   "created": "2026-10-27",
-  "status": "in_progress",
+  "status": "awaiting_manual_verification",
   "baseline": {
     "branch": "main",
     "commit": "072c08cd9e4b83d9e224aaa662872d8b47e0c796",
@@ -14,7 +14,7 @@
     "product": "prd.md",
     "implementation": "spec.md"
   },
-  "current_delivery": "实验实现和本地自动化验证完成，已准备提交自身 fork main 的 PR；真实豆包登录、浏览器请求与效果验收按维护者要求留待 PR / CI 后打包测试。",
+  "current_delivery": "实验代码实现完成，已提交自身 fork main 的 PR #1。实现提交的 GitHub CI 全部通过（61个文件、688项测试，7项Python测试，双构建与测试ZIP）；PR等待维护者审核，真实豆包会话与效果待打包实测。",
   "reference": {
     "author": "Haleclipse",
     "author_url": "https://github.com/Haleclipse",
@@ -880,7 +880,7 @@
       "id": "T19",
       "phase": "P4",
       "title": "收尾检查并形成可评审变更",
-      "status": "in_progress",
+      "status": "completed",
       "depends_on": [
         "T17",
         "T18"
@@ -891,9 +891,9 @@
       ],
       "files": [
         "docs/doubao-web-verification.md",
-        "prd.md",
-        "spec.md",
-        "task.json"
+        "docs/doubao-web/prd.md",
+        "docs/doubao-web/spec.md",
+        "docs/doubao-web/task.json"
       ],
       "deliverables": [
         "验证摘要、已知限制与PR候选说明"
@@ -926,8 +926,24 @@
         "T12",
         "T18"
       ],
-      "progress_note": "本地类型、61文件测试、双构建、脚本语法和独立代码审阅完成；PR与CI提交中；受影响真实浏览器测试未通过执行条件，已明确记录。"
+      "progress_note": "可评审变更已提交PR #1；实现提交的CI全部通过并生成测试包。真实浏览器和账号验收保持待办，未伪报为通过。",
+      "evidence": [
+        "https://github.com/SweerItTer/wupage/pull/1",
+        "https://github.com/SweerItTer/wupage/actions/runs/40454016759",
+        "../doubao-web-verification.md"
+      ]
     }
   ],
-  "verification_report": "../doubao-web-verification.md"
+  "verification_report": "../doubao-web-verification.md",
+  "pull_request": "https://github.com/SweerItTer/wupage/pull/1",
+  "implementation_commit": "4c75651fae175d60662e3558d7deebdec937f364",
+  "ci_evidence": {
+    "url": "https://github.com/SweerItTer/wupage/actions/runs/40454016759",
+    "head_sha": "4c75651fae175d60662e3558d7deebdec937f364",
+    "conclusion": "success",
+    "vitest_files": 61,
+    "vitest_tests": 688,
+    "python_tests": 7,
+    "latest_status": "以后续PR检查为准"
+  }
 }
