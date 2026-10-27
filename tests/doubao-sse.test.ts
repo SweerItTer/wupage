@@ -61,10 +61,16 @@ describe("Doubao article SSE", () => {
     expect(() => parser.push(frame([item(0, "不同")]))).toThrow(ProviderError);
   });
 
-  it("keeps the original when the service detects the target language", () => {
+  it("keeps the original for the protocol's empty same-language response", () => {
     const parser = new DoubaoSseParser(["原文"], "zh");
     parser.push(frame([item(0, "", "zh")]));
     expect(parser.finish()).toEqual(["原文"]);
+  });
+
+  it("does not let server language metadata replace a nonempty translation", () => {
+    const parser = new DoubaoSseParser(["English and 中文"], "zh");
+    parser.push(frame([item(0, "英文和中文", "zh")]));
+    expect(parser.finish()).toEqual(["英文和中文"]);
   });
 
   it.each([

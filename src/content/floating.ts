@@ -8,7 +8,7 @@ import type {
 } from "../shared/types";
 import { sendRuntimeRequest } from "./runtime";
 import { localProviderNotice } from "../shared/local-notice";
-import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoLanguageControls } from "../shared/doubao-ui";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 import { ProviderError } from "../shared/errors";
 import {
   clearTranslationsIn,
@@ -584,10 +584,7 @@ function applyMenuSettings(menu: HTMLElement, settings: ExtensionSettings): void
     targetLangSelect.value = settings.targetLang;
     syncSelectValue(targetLangSelect);
   }
-  if (sourceLangSelect && targetLangSelect) {
-    syncDoubaoLanguageControls(settings, sourceLangSelect, targetLangSelect);
-    syncSelectValue(sourceLangSelect);
-  }
+  if (targetLangSelect) syncDoubaoTargetControls(settings, targetLangSelect);
   const providerSelect = menu.querySelector<HTMLSelectElement>("[data-role='provider']");
   if (providerSelect) {
     const providers = settings.providers.filter((provider) => provider.enabled !== false);
@@ -1196,7 +1193,7 @@ async function updateLanguages(menu: HTMLElement): Promise<void> {
   const sourceLang = sourceSelect?.value;
   const targetLang = menu.querySelector<HTMLSelectElement>("[data-role='target-lang']")?.value;
   if (!sourceLang || !targetLang) return;
-  await updateFloatingSettings(menu, { ...(sourceSelect?.dataset.doubaoAutomatic === "true" ? {} : { sourceLang }), targetLang });
+  await updateFloatingSettings(menu, { sourceLang, targetLang });
 }
 
 function updateFloatingSettings(menu: HTMLElement, patch: Partial<ExtensionSettings>): Promise<void> {

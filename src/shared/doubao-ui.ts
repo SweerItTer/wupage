@@ -5,23 +5,11 @@ export function isDoubaoProviderUnavailable(provider: ProviderConfig): boolean {
   return provider.type === "doubao-web" && !isDoubaoBrowserSupported();
 }
 
-/** A disabled automatic source is a view of Doubao's capability, not a saved preference. */
-export function readSourceLanguage(select: HTMLSelectElement, settings: ExtensionSettings): string {
-  return select.dataset.doubaoAutomatic === "true" ? settings.sourceLang : select.value.trim() || "auto";
-}
-
-export function syncDoubaoLanguageControls(
+export function syncDoubaoTargetControls(
   settings: ExtensionSettings,
-  source: HTMLSelectElement,
   target: HTMLSelectElement
 ): void {
   const doubao = settings.providers.find((provider) => provider.id === settings.activeProviderId)?.type === "doubao-web";
-  source.dataset.doubaoAutomatic = String(doubao);
-  source.disabled = doubao;
-  source.value = doubao ? "auto" : settings.sourceLang;
-  source.title = doubao ? "豆包自动识别源语言；切换服务后恢复已保存的源语言。" : "";
-  const automatic = Array.from(source.options).find((option) => option.value === "auto");
-  if (automatic) automatic.textContent = doubao ? "自动识别（豆包）" : "自动检测";
   for (const option of target.options) {
     option.disabled = doubao && !Object.hasOwn(DOUBAO_TARGET_LANGUAGES, option.value);
   }
@@ -35,7 +23,7 @@ export function doubaoProviderNotice(settings: ExtensionSettings): string | unde
   if (provider?.type !== "doubao-web") return undefined;
   if (isDoubaoProviderUnavailable(provider)) return "豆包网页登录翻译目前仅供 Chromium 浏览器实验使用，Firefox 尚未验证。请手动选择其他服务。";
   if (!Object.hasOwn(DOUBAO_TARGET_LANGUAGES, settings.targetLang)) return "豆包暂不支持当前目标语言，请选择中文、英语、日语、韩语、法语、德语、西班牙语或俄语。";
-  return "豆包（实验）：自动识别源语言。在同一浏览器登录豆包后可直接翻译；连接异常时可到设置中重新检测。实际使用会将待译文本发送到豆包。";
+  return "豆包（实验）：在同一浏览器登录豆包后可直接翻译；连接异常时可到设置中重新检测。实际使用会将待译文本发送到豆包。";
 }
 
 const STATUS_LABELS: Record<DoubaoStatus["state"], string> = {

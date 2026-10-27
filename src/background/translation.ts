@@ -16,6 +16,7 @@ import { assertTranslationResponse, TranslationResponseError } from "./translati
 import { LOCAL_MODELS } from "../local/models";
 import { DOUBAO_PROTOCOL_VERSION } from "../shared/doubao";
 import { withDoubaoDeadline } from "./doubao";
+import { detectSourceLanguage } from "./source-language";
 
 const providerLimiters = new Map<string, ProviderLimiter>();
 const debugTasks: TranslationDebugTask[] = [];
@@ -33,8 +34,15 @@ export async function translateWithSettings(
   if (providerConfig.enabled === false) throw new Error(`Provider is disabled: ${providerId}`);
 
   if (providerConfig.type === "doubao-web") {
-    return withDoubaoDeadline((signal) => translateConfigured(settings,
-      { ...request, sourceLang: "auto", context: undefined }, providerConfig, signal));
+    return withDoubaoDeadline(async (signal) => {
+      let sourceLang = request.sourceLang ?? "auto";
+      if (sourceLang === "auto" && request.texts.length) {
+        const detected = await detectSourceLanguage(request.texts, signal);
+        if (!detected) throw new Error("无法可靠识别源语言，请在翻译设置中手动选择源语言。");
+        sourceLang = detected;
+      }
+      return translateConfigured(settings, { ...request, sourceLang, context: undefined }, providerConfig, signal);
+    });
   }
   return translateConfigured(settings, request, providerConfig);
 }

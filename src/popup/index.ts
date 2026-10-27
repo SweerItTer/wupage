@@ -6,7 +6,7 @@ import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
 import { isLikelyPdfUrl } from "../pdf/launch";
 import { localProviderNotice } from "../shared/local-notice";
-import { doubaoProviderNotice, isDoubaoProviderUnavailable, readSourceLanguage, syncDoubaoLanguageControls } from "../shared/doubao-ui";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -50,7 +50,7 @@ async function init(): Promise<void> {
     .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包网页登录翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   provider.value = settings.activeProviderId;
-  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
+  syncDoubaoTargetControls(settings, targetLang);
   updateLocalNotice();
   translationDisplayMode.innerHTML = TRANSLATION_DISPLAY_MODES
     .map((mode) => `<option value="${mode.value}">${mode.label}</option>`)
@@ -117,12 +117,12 @@ async function init(): Promise<void> {
 async function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
-    sourceLang: readSourceLanguage(sourceLang, settings),
+    sourceLang: sourceLang.value.trim() || "auto",
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value,
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
   };
-  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
+  syncDoubaoTargetControls(settings, targetLang);
   await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
   updateLocalNotice();
 }

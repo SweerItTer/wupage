@@ -364,28 +364,40 @@ describe("floating translation interactions", () => {
     expect(Number.parseFloat(menu.style.left) + menu.offsetWidth).toBeLessThanOrEqual(312);
   });
 
-  it("displays Doubao's automatic source without losing the saved language when changing services", async () => {
+  it("uses the ordinary editable source selection with Doubao and when changing services", async () => {
     Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test/${path}` });
     stored = { ...stored, activeProviderId: "doubao-web", sourceLang: "en", targetLang: "pt" };
     storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
     const source = query<HTMLSelectElement>("[data-role='source-lang']");
     const target = query<HTMLSelectElement>("[data-role='target-lang']");
     const provider = query<HTMLSelectElement>("[data-role='provider']");
-    expect(source.disabled).toBe(true);
-    expect(source.value).toBe("auto");
-    expect(query("[data-role='source-lang-value']").textContent).toContain("自动识别");
+    expect(source.disabled).toBe(false);
+    expect(source.value).toBe("en");
+    expect(query("[data-role='source-lang-value']").textContent).toBe("English");
     expect(target.value).toBe("pt");
     expect(target.selectedOptions[0]?.disabled).toBe(true);
     target.value = "ja";
     target.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.waitFor(() => expect(stored.targetLang).toBe("ja"));
     expect(stored.sourceLang).toBe("en");
+    source.value = "fr";
+    source.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("fr"));
     provider.value = "google-web-translate";
     provider.dispatchEvent(new Event("change", { bubbles: true }));
-    await vi.waitFor(() => expect(source.disabled).toBe(false));
-    expect(stored.sourceLang).toBe("en");
-    expect(source.value).toBe("en");
-    expect(query("[data-role='source-lang-value']").textContent).toBe("English");
+    await vi.waitFor(() => expect(stored.activeProviderId).toBe("google-web-translate"));
+    expect(source.disabled).toBe(false);
+    expect(stored.sourceLang).toBe("fr");
+    expect(source.value).toBe("fr");
+    expect(query("[data-role='source-lang-value']").textContent).toBe("Français");
+    provider.value = "doubao-web";
+    provider.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(stored.activeProviderId).toBe("doubao-web"));
+    source.value = "auto";
+    source.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("auto"));
+    expect(source.disabled).toBe(false);
+    expect(query("[data-role='source-lang-value']").textContent).toBe("自动检测");
     expect(translationRequests()).toHaveLength(0);
   });
 

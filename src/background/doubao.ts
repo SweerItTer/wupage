@@ -458,6 +458,8 @@ async function article(
   probe: boolean
 ): Promise<Array<string | undefined>> {
   return physicalRequest(DOUBAO_TRANSLATE_ENDPOINT, {
+    // The observed article protocol has no source-language parameter. Source
+    // selection/detection stays in the shared translation path, not this API.
     raw_text: sources, target_lang: target, translate_service: "1"
   }, probe, signal, async (response, controller) => {
     if (!/^text\/event-stream\b/i.test(response.headers.get("Content-Type") ?? "")) {
@@ -560,7 +562,7 @@ export function checkDoubao(): Promise<DoubaoStatus> {
   if (checkPromise) return checkPromise;
   status = { state: "checking", message: "正在检测豆包翻译…" };
   checkPromise = withDoubaoDeadline(async (signal) => {
-    const result = await translateTexts({ texts: ["Hello world"], targetLang: "zh-CN", sourceLang: "auto" }, signal, true);
+    const result = await translateTexts({ texts: ["Hello world"], targetLang: "zh-CN", sourceLang: "en" }, signal, true);
     if (result.length !== 1 || !result[0]?.trim()) throw new ProviderError("豆包检测未返回有效译文。", "incomplete");
     return getDoubaoStatus();
   }).catch((error) => {

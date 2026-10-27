@@ -17,6 +17,7 @@ vi.mock("../src/shared/doubao", async (importOriginal) => {
 });
 
 const translateBatch = vi.fn<TranslatorProvider["translateBatch"]>();
+const detectLanguage = vi.fn();
 let nextProviderId = 0;
 
 function settings(cacheEnabled = false): ExtensionSettings {
@@ -35,7 +36,7 @@ function memoryStorage() {
   const set = vi.fn(async (entries: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(entries)) values.set(key, value);
   });
-  vi.stubGlobal("chrome", { storage: { local: { get, set } } });
+  vi.stubGlobal("chrome", { i18n: { detectLanguage }, storage: { local: { get, set } } });
   return { values, get, set };
 }
 
@@ -47,6 +48,9 @@ function deferred<T>() {
 
 beforeEach(() => {
   protocol.version = 1;
+  detectLanguage.mockReset();
+  detectLanguage.mockResolvedValue({ languages: [{ language: "en", percentage: 95 }] });
+  vi.stubGlobal("chrome", { i18n: { detectLanguage } });
   translateBatch.mockReset();
   translateBatch.mockImplementation(async (request) => request.texts.map((text) => `译文：${text}`));
   vi.mocked(createProvider).mockReset();
@@ -62,7 +66,7 @@ afterEach(() => {
 });
 
 describe("Doubao integration with the common translation path", () => {
-  it("uses automatic source detection and native arrays without mutating page requests", async () => {
+  it("preserves the selected source language and native arrays without mutating page requests", async () => {
     const config = settings();
     const request: TranslateBatchRequest = {
       texts: ["First paragraph", "Second paragraph"], sourceLang: "ja", targetLang: "zh-CN",
@@ -76,12 +80,74 @@ describe("Doubao integration with the common translation path", () => {
 
     expect(translateBatch).toHaveBeenCalledTimes(1);
     const [actual, signal] = translateBatch.mock.calls[0];
-    expect(actual).toEqual({ ...request, sourceLang: "auto", context: undefined });
+    expect(actual).toEqual({ ...request, context: undefined });
     expect(actual.texts).toEqual(["First paragraph", "Second paragraph"]);
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(signal?.aborted).toBe(false);
     expect(request.sourceLang).toBe("ja");
     expect(request.context).toContain("Private document context");
+    expect(detectLanguage).not.toHaveBeenCalled();
+  });
+
+  it("resolves automatic source language locally before translation and shares the matching manual-language cache", async () => {
+    memoryStorage();
+    const config = settings(true);
+    const request: TranslateBatchRequest = {
+      texts: ["Un paragraphe en français."], sourceLang: "auto", targetLang: "zh-CN"
+    };
+    detectLanguage.mockResolvedValueOnce({ languages: [{ language: "fr", percentage: 92 }] });
+
+    expect((await translateWithSettings(config, request)).cached).toBe(0);
+    expect(translateBatch).toHaveBeenCalledWith(expect.objectContaining({ sourceLang: "fr" }), expect.any(AbortSignal));
+    expect(request.sourceLang).toBe("auto");
+    expect((await translateWithSettings(config, { ...request, sourceLang: "fr" })).cached).toBe(1);
+    expect(detectLanguage).toHaveBeenCalledTimes(1);
+    expect(translateBatch).toHaveBeenCalledTimes(1);
+    expect(getTranslationDebugSnapshot().tasks.find((task) => task.providerId === config.activeProviderId)?.sourceLang).toBe("fr");
+  });
+
+  it("asks for a manual source when browser detection is uncertain before sending or caching any text", async () => {
+    const storage = memoryStorage();
+    const config = settings(true);
+    detectLanguage.mockResolvedValueOnce({ languages: [{ language: "und", percentage: 0 }] });
+    const request = { texts: ["A short label"], sourceLang: "auto", targetLang: "zh-CN" };
+
+    await expect(translateWithSettings(config, request)).rejects.toThrow("手动选择源语言");
+    expect(translateBatch).not.toHaveBeenCalled();
+    expect(storage.set).not.toHaveBeenCalled();
+    expect((await translateWithSettings(config, { ...request, sourceLang: "en" })).translations).toEqual(["译文：A short label"]);
+    expect(detectLanguage).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes browser source detection in the deadline and never translates after a late detector result", async () => {
+    vi.useFakeTimers();
+    const detection = deferred<{ languages: Array<{ language: string; percentage: number }> }>();
+    detectLanguage.mockReturnValueOnce(detection.promise);
+    const pending = translateWithSettings(settings(), { texts: ["Hello"], targetLang: "zh-CN" });
+    const rejected = expect(pending).rejects.toMatchObject({ errorCode: "timeout" });
+
+    await vi.advanceTimersByTimeAsync(110_000);
+    await rejected;
+    detection.resolve({ languages: [{ language: "en", percentage: 95 }] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(translateBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not skip a mixed-language batch just because its dominant source matches the target", async () => {
+    const texts = ["已经是中文的长段落。", "A shorter English paragraph."];
+    detectLanguage.mockResolvedValueOnce({ languages: [{ language: "zh-CN", percentage: 70 }] });
+    translateBatch.mockResolvedValueOnce([texts[0], "较短的英文段落。"]);
+
+    expect((await translateWithSettings(settings(), { texts, sourceLang: "auto", targetLang: "zh-CN" })).translations)
+      .toEqual([texts[0], "较短的英文段落。"]);
+    expect(translateBatch).toHaveBeenCalledWith(expect.objectContaining({ texts, sourceLang: "zh-CN" }), expect.any(AbortSignal));
+  });
+
+  it("does not detect empty input", async () => {
+    await expect(translateWithSettings(settings(), { texts: [], targetLang: "zh-CN" }))
+      .resolves.toEqual({ translations: [], cached: 0 });
+    expect(detectLanguage).not.toHaveBeenCalled();
+    expect(translateBatch).not.toHaveBeenCalled();
   });
 
   it("retains native item boundaries and order while limiting each batch to ten items", async () => {
@@ -95,16 +161,18 @@ describe("Doubao integration with the common translation path", () => {
     expect(result.translations).toEqual(texts.map((text) => `译文：${text}`));
   });
 
-  it("shares cache entries for ignored source-language/context hints but separates target languages", async () => {
+  it("separates source and target language caches while continuing to ignore unsupported page context", async () => {
     memoryStorage();
     const config = settings(true);
     const request = { texts: ["Hello"], targetLang: "zh-CN", sourceLang: "en", context: "Page A" };
 
     expect((await translateWithSettings(config, request)).cached).toBe(0);
-    expect((await translateWithSettings(config, { ...request, sourceLang: "de", context: "Page B" })).cached).toBe(1);
+    expect((await translateWithSettings(config, { ...request, sourceLang: "de", context: "Page B" })).cached).toBe(0);
+    expect((await translateWithSettings(config, { ...request, context: "Page C" })).cached).toBe(1);
     expect((await translateWithSettings(config, { ...request, targetLang: "ja" })).cached).toBe(0);
-    expect(translateBatch).toHaveBeenCalledTimes(2);
-    expect(translateBatch.mock.calls.every(([part]) => part.sourceLang === "auto" && part.context === undefined)).toBe(true);
+    expect(translateBatch).toHaveBeenCalledTimes(3);
+    expect(translateBatch.mock.calls.map(([part]) => part.sourceLang)).toEqual(["en", "de", "en"]);
+    expect(translateBatch.mock.calls.every(([part]) => part.context === undefined)).toBe(true);
   });
 
   it("invalidates cached translations when the Doubao protocol version changes", async () => {

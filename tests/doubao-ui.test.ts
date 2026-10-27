@@ -56,13 +56,16 @@ describe("Doubao provider controls", () => {
     if (surface === "options") await import("../src/options/index");
     else if (surface === "popup") await import("../src/popup/index");
     else await import("../src/pdf/index");
-    await vi.waitFor(() => expect(query<HTMLSelectElement>("#sourceLang").disabled).toBe(true));
+    await vi.waitFor(() => expect(query<HTMLSelectElement>("#sourceLang").value).toBe(stored.sourceLang));
     await Promise.resolve();
   }
 
-  it("shows only a login flow, names its source, and saves the original language preference", async () => {
+  it("shows a login flow and attribution while saving the ordinary source language selection", async () => {
     await launch("options");
-    expect(query<HTMLSelectElement>("#sourceLang").value).toBe("auto");
+    const source = query<HTMLSelectElement>("#sourceLang");
+    expect(source.value).toBe("en");
+    expect(source.disabled).toBe(false);
+    expect(source.querySelector('option[value="auto"]')?.textContent).toBe("自动检测");
     expect(document.querySelectorAll("#providerForm [data-field]")).toHaveLength(1);
     expect(document.querySelector("#providerForm .provider-performance")).toBeNull();
     expect(query<HTMLElement>("#providerForm").textContent).toContain("按顺序串行执行");
@@ -74,12 +77,20 @@ describe("Doubao provider controls", () => {
     await vi.waitFor(() => expect(requests("SAVE_SETTINGS")).toHaveLength(1));
     expect(stored.sourceLang).toBe("en");
     expect(stored.providers.find((provider) => provider.id === "doubao-web")).toMatchObject({ performanceMode: "custom", chunkSize: 1200, concurrency: 1 });
+    source.value = "ja";
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("ja"));
     query<HTMLButtonElement>("[data-action='open-doubao']").click();
     expect(createTab).toHaveBeenCalledWith({ url: "https://www.doubao.com/" });
     expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("尚未验证");
     await chooseOptionsProvider("google-web-translate");
-    expect(query<HTMLSelectElement>("#sourceLang").value).toBe("en");
-    expect(query<HTMLSelectElement>("#sourceLang").disabled).toBe(false);
+    expect(source.value).toBe("ja");
+    expect(source.disabled).toBe(false);
+    await chooseOptionsProvider("doubao-web");
+    source.value = "auto";
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("auto"));
+    expect(source.selectedOptions[0]?.textContent).toBe("自动检测");
   });
 
   it("merges repeated checks and ignores a completed check after changing services", async () => {
@@ -142,7 +153,7 @@ describe("Doubao provider controls", () => {
     expect(check.disabled).toBe(false);
   });
 
-  it.each(["popup", "pdf"] as const)("preserves source language across Doubao selections in the %s", async (surface) => {
+  it.each(["popup", "pdf"] as const)("saves ordinary source language choices across Doubao selections in the %s", async (surface) => {
     stored.targetLang = "pt";
     await launch(surface);
     const source = query<HTMLSelectElement>("#sourceLang");
@@ -150,23 +161,33 @@ describe("Doubao provider controls", () => {
     const provider = query<HTMLSelectElement>("#provider");
     expect(target.value).toBe("pt");
     expect(target.selectedOptions[0]?.disabled).toBe(true);
-    expect(source.value).toBe("auto");
+    expect(source.value).toBe("en");
+    expect(source.disabled).toBe(false);
+    expect(source.querySelector('option[value="auto"]')?.textContent).toBe("自动检测");
+    source.value = "de";
+    source.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("de"));
     target.value = "ja";
     target.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(stored.targetLang).toBe("ja"));
-    expect(stored.sourceLang).toBe("en");
+    expect(stored.sourceLang).toBe("de");
     provider.value = "google-web-translate";
     provider.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(stored.activeProviderId).toBe("google-web-translate"));
     expect(source.disabled).toBe(false);
-    expect(source.value).toBe("en");
-    expect(stored.sourceLang).toBe("en");
+    expect(source.value).toBe("de");
+    expect(stored.sourceLang).toBe("de");
     expect(Array.from(target.options).find((option) => option.value === "pt")?.disabled).toBe(false);
     provider.value = "doubao-web";
     provider.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(stored.activeProviderId).toBe("doubao-web"));
-    expect(source.value).toBe("auto");
-    expect(stored.sourceLang).toBe("en");
+    expect(source.value).toBe("de");
+    expect(stored.sourceLang).toBe("de");
+    source.value = "auto";
+    source.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("auto"));
+    expect(source.selectedOptions[0]?.textContent).toBe("自动检测");
+    expect(source.disabled).toBe(false);
     expect(requests("TRANSLATE_BATCH")).toHaveLength(0);
     expect(requests("CHECK_DOUBAO")).toHaveLength(0);
     expect(createTab).not.toHaveBeenCalled();

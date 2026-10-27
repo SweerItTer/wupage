@@ -101,22 +101,6 @@ npm run build
 - `npm run test:local` 使用可选的 Playwright 与 Chromium 加载真实 MV3 扩展，默认从官方 CDN 下载约 51.9 MB 的英译中模型，然后断网验证翻译、自动语言识别、模型持久化和删除。支持 `PLAYWRIGHT_MODULE`、`PDF_TEST_BROWSER`；`LOCAL_MODEL_FIXTURE_DIR` 可指向事先保存的模型文件目录，此时仅在临时测试构建中将该模型的下载地址改为本地 HTTP 服务器，实际制造断流并验证 Range 续传，随后验证断网翻译和离线导入。生产源码、模型字节、校验值与推理引擎均保持原样。报告与截图保存在 `.npm-cache/local-translation/`。
 - 单元测试不衡量模型质量。真实模型回归至少检查英译中；其他方向、英语中转及低内存设备仍需人工比较质量、速度和资源占用。
 
-### 豆包网页登录翻译实验
-
-`doubao-web` 将有序字符串数组交给既有的网页、PDF 和 OCR 文字翻译链路，不属于 LLM 提示词 provider。后台只请求固定的豆包 launch 与文章 SSE 接口；所有入口共用并发为 1 的队列，相邻网络请求至少间隔 1 秒。源语言按 `auto` 归一化，页面上下文不发送给豆包，缓存包含协议版本。
-
-普通翻译会自动准备会话，无需先点击“重新检测”。launch 的网络瞬断 / 5xx 可进行一次有限重试，与后续文章请求及缺项补发共享额外尝试预算。鉴权或服务拒绝会使旧任务失败并释放等待队列；用户新发起的翻译会共享一次新的 launch，再由实际文章结果验证连接。完整的网络翻译成功后更新状态，纯空白、纯保护符或缓存命中不算登录成功。429 冷却仍约束新翻译和手动检测，旧任务不自动重放。
-
-- `src/background/doubao.ts`：初始化、登录检测、队列、限流与超时。
-- `src/background/doubao-sse.ts`、`doubao-segmentation.ts`：流式事件校验、索引聚合、超长文本拆分与重组。
-- `src/background/doubao-compatibility.ts`：只作用于本扩展发往两个固定接口的临时 Origin 规则，结束时清理；规则编号与 Ollama 分离。
-- `src/shared/doubao.ts`、`doubao-ui.ts`：平台、语言与无密钥界面的共享逻辑。
-- `tests/doubao-*.test.ts`：使用合成响应和模拟网络，不需要账号或 Cookie；覆盖协议错误、缺项补发、全局排队、总预算、结构保护、缓存、设置迁移和界面恢复。
-
-设计与需求见 [spec.md](doubao-web/spec.md)、[prd.md](doubao-web/prd.md) 和 [task.json](doubao-web/task.json)。自动验证、维护者的实测反馈及真实浏览器的待验项分列在[验证记录](doubao-web-verification.md)。维护者已报告普通翻译正常，同时报告首次启动恢复问题；本次修复的真实浏览器复测仍待完成。浏览器版本、Cookie 策略及完整平台矩阵需要分别记录，Firefox 暂禁用此 provider。
-
-接入思路与协议参考 [Haleclipse](https://github.com/Haleclipse) 的 CometixTranslate，来源：[Linux.do 原帖](https://linux.do/t/topic/2910452)。实现按 WuPage 架构独立编写，未收录参考脚本及打包代码。
-
 ### PDF 排版回归
 
 复杂 PDF 的浏览器回归样本、执行方式和覆盖边界见 [PDF 排版回归](pdf-regression.md)。

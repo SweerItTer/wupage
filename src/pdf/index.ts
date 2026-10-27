@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from "../shared/languages";
 import { sendRuntimeMessage } from "../shared/messaging";
 import { ProviderError } from "../shared/errors";
-import { doubaoProviderNotice, isDoubaoProviderUnavailable, readSourceLanguage, syncDoubaoLanguageControls } from "../shared/doubao-ui";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 import type {
   ExtensionSettings,
   RuntimeRequest,
@@ -1049,11 +1049,11 @@ function formatTranslationError(error: unknown): string {
 
 async function saveReaderSettings(): Promise<void> {
   const readerSettings = {
-    sourceLang: readSourceLanguage(sourceLang, settings),
+    sourceLang: sourceLang.value.trim() || "auto",
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value || settings.activeProviderId
   };
-  // Update the view before yielding so a quick second change cannot save the automatic source.
+  // Update provider controls immediately while the latest stored settings are loading.
   settings = { ...settings, ...readerSettings };
   updateDoubaoControls();
   settings = {
@@ -1084,7 +1084,7 @@ function renderProviders(): void {
 }
 
 function updateDoubaoControls(): void {
-  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
+  syncDoubaoTargetControls(settings, targetLang);
   const message = doubaoProviderNotice(settings);
   let notice = document.getElementById("doubaoProviderNotice");
   if (!notice && message) {

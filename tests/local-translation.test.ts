@@ -43,6 +43,7 @@ describe("Firefox local translation", () => {
     sendMessage.mockResolvedValue({ ok: false, error: "请先下载或导入模型" });
     await expect(translateLocally({ texts: ["Hello"], sourceLang: "en", targetLang: "zh-CN" })).rejects.toThrow("下载或导入");
     expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(detectLanguage).not.toHaveBeenCalled();
   });
   it("avoids inference for empty input and identical languages, and respects pre-aborted requests", async () => {
     expect(await translateLocally({ texts: [], targetLang: "zh-CN" })).toEqual([]);

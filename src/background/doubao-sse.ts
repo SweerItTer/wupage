@@ -131,7 +131,10 @@ export class DoubaoSseParser {
         || (item.detect_lang !== undefined && typeof item.detect_lang !== "string")) throw protocolError();
       const index = item.index as number;
       if (index < 0 || index >= this.results.length) throw protocolError();
-      const translation = item.detect_lang === this.targetLang ? this.sources[index] : item.res;
+      // The service can omit a translation for text already in the target
+      // language. This protocol fallback does not resolve the request's source
+      // language or override a nonempty translation with server metadata.
+      const translation = !item.res.trim() && item.detect_lang === this.targetLang ? this.sources[index] : item.res;
       if (!translation.trim()) throw protocolError();
       const previous = this.results[index];
       if (previous !== undefined && previous !== translation) throw protocolError();

@@ -7,7 +7,7 @@ import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
 import { setupLocalModelControl } from "../local/control";
 import { isDoubaoBrowserSupported } from "../shared/doubao";
-import { formatDoubaoStatus, isDoubaoProviderUnavailable, readSourceLanguage, syncDoubaoLanguageControls } from "../shared/doubao-ui";
+import { formatDoubaoStatus, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -221,7 +221,7 @@ function renderProviderForm(): void {
   clearTimeout(doubaoRetryTimer);
   disposeLocalControl?.(); disposeLocalControl = undefined;
   const provider = getActiveProvider();
-  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
+  syncDoubaoTargetControls(settings, targetLang);
   testButton.textContent = provider.type === "doubao-web" ? "重新检测豆包" : "测试服务";
   testButton.disabled = false;
   if (provider.type === "doubao-web") {
@@ -230,7 +230,7 @@ function renderProviderForm(): void {
       <div class="doubao-setup">
         <h3>豆包网页登录翻译 · 实验功能</h3>
         <p>无需 API key。在当前浏览器打开豆包并完成登录后，即可直接翻译。扩展会自动准备连接；“重新检测”用于检查连接，不是每次翻译的必需步骤。</p>
-        <p>豆包自动识别源语言。翻译时，待译文本会发送到豆包；检测只发送固定短文本。请求会按顺序串行执行，暂不保证所有浏览器和账号可用。</p>
+        <p>翻译时，待译文本会发送到豆包；检测只发送固定短文本。请求会按顺序串行执行，暂不保证所有浏览器和账号可用。</p>
         <div class="doubao-actions">
           <button type="button" data-action="open-doubao">打开豆包并登录</button>
           <button type="button" data-action="check-doubao">重新检测</button>
@@ -676,7 +676,7 @@ function readSettingsFromForm(): ExtensionSettings {
   return {
     ...settings,
     targetLang: targetLang.value.trim() || "zh-CN",
-    sourceLang: readSourceLanguage(sourceLang, settings),
+    sourceLang: sourceLang.value.trim() || "auto",
     activeProviderId: settings.activeProviderId,
     chunkSize: Number(chunkSize.value),
     concurrency: Number(concurrency.value),
