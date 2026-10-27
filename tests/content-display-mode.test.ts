@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS, SETTINGS_KEY } from "../src/shared/defaults";
 
-const { setMode, getPageState, hasTranslations } = vi.hoisted(() => ({
-  setMode: vi.fn(), getPageState: vi.fn(), hasTranslations: vi.fn()
+const { updateSettings, getPageState, hasTranslations } = vi.hoisted(() => ({
+  updateSettings: vi.fn(), getPageState: vi.fn(), hasTranslations: vi.fn()
 }));
 vi.mock("../src/content/page-translation", () => ({
-  hidePageTranslation: vi.fn(), startPageTranslation: vi.fn(), setPageTranslationDisplayMode: setMode,
+  hidePageTranslation: vi.fn(), startPageTranslation: vi.fn(), loadPageTranslationSettings: vi.fn(),
+  updatePageTranslationSettings: updateSettings,
   getPageTranslationState: getPageState
 }));
 vi.mock("../src/content/dom", () => ({ hasPageTranslations: hasTranslations }));
@@ -16,26 +18,28 @@ vi.mock("../src/content/image-translation", () => ({ initImageTranslation: vi.fn
 vi.mock("../src/content/styles", () => ({ injectContentStyles: vi.fn() }));
 vi.mock("../src/content/runtime", () => ({ addRuntimeMessageListener: vi.fn(), sendRuntimeRequest: vi.fn() }));
 
-describe("saved display mode updates", () => {
+describe("saved page settings updates", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules(); });
 
-  it("applies local settings changes to the content page without requesting translation", async () => {
+  it("forwards saved languages and display modes to the page session", async () => {
     let listener!: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void;
     const sendMessage = vi.fn();
     vi.stubGlobal("chrome", { runtime: { sendMessage }, storage: { onChanged: {
       addListener: (callback: typeof listener) => { listener = callback; }
     } } });
     await import("../src/content/index");
-    for (const mode of ["replace", "bilingual-accent", "bilingual"]) {
-      listener({ "wupage.settings": { oldValue: { translationDisplayMode: "previous" }, newValue: { translationDisplayMode: mode } } }, "local");
-      expect(setMode).toHaveBeenLastCalledWith(mode);
+    for (const translationDisplayMode of ["replace", "bilingual-accent", "bilingual"] as const) {
+      const settings = { ...DEFAULT_SETTINGS, translationDisplayMode };
+      listener({ [SETTINGS_KEY]: { newValue: settings } }, "local");
+      expect(updateSettings).toHaveBeenLastCalledWith(settings);
     }
-    expect(setMode).toHaveBeenCalledTimes(3);
-    listener({ "wupage.settings": { oldValue: { translationDisplayMode: "bilingual" }, newValue: { translationDisplayMode: "bilingual", targetLang: "ja" } } }, "local");
-    listener({ "wupage.settings": { newValue: { translationDisplayMode: "invalid" } } }, "local");
-    listener({ "wupage.settings": { newValue: { translationDisplayMode: "replace" } } }, "sync");
-    listener({ "wupage.settings": { newValue: undefined } }, "local");
-    expect(setMode).toHaveBeenCalledTimes(3);
+    const settings = { ...DEFAULT_SETTINGS, targetLang: "ja" };
+    listener({ [SETTINGS_KEY]: { oldValue: DEFAULT_SETTINGS, newValue: settings } }, "local");
+    expect(updateSettings).toHaveBeenLastCalledWith(settings);
+    listener({ [SETTINGS_KEY]: { newValue: settings } }, "sync");
+    listener({ "wupage.floating.position": { newValue: { left: 100, top: 100 } } }, "local");
+    listener({ [SETTINGS_KEY]: { newValue: undefined } }, "local");
+    expect(updateSettings).toHaveBeenCalledTimes(4);
     expect(sendMessage).not.toHaveBeenCalled();
   });
 

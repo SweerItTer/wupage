@@ -9,7 +9,7 @@ vi.mock("../src/content/runtime", () => ({ sendRuntimeRequest: vi.fn() }));
 import { sendRuntimeRequest } from "../src/content/runtime";
 import {
   clearPageTranslation, getPageTranslationState, hidePageTranslation,
-  setPageTranslationDisplayMode, startPageTranslation
+  setPageTranslationDisplayMode, startPageTranslation, updatePageTranslationSettings
 } from "../src/content/page-translation";
 import { injectContentStyles } from "../src/content/styles";
 
@@ -163,7 +163,7 @@ describe("replacement mode with host-managed news teasers", () => {
     const host = restoreHostTextWhenCleared(source);
     await startPageTranslation(settings);
     await vi.advanceTimersByTimeAsync(500);
-    await startPageTranslation({ ...settings, targetLang: "fr" }, false);
+    updatePageTranslationSettings({ ...settings, targetLang: "fr" });
     await vi.advanceTimersByTimeAsync(500);
 
     expect(host.writes).toBe(1);

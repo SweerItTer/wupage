@@ -85,6 +85,8 @@ let activeSession: TranslationSession | null = null;
 let suspendedSession: TranslationSession | null = null;
 let viewportTimer: number | undefined;
 let currentDisplayMode: TranslationDisplayMode | undefined;
+let settingsRevision = 0;
+let latestSettings: ExtensionSettings | undefined;
 const stateListeners = new Set<() => void>();
 
 export function getPageTranslationState(): PageTranslationState {
@@ -105,6 +107,31 @@ export function subscribePageTranslationState(listener: () => void): () => void 
 
 function notifyTranslationState(): void {
   stateListeners.forEach((listener) => listener());
+}
+
+export async function loadPageTranslationSettings(): Promise<ExtensionSettings> {
+  const revision = settingsRevision;
+  const settings = await sendRuntimeRequest<ExtensionSettings>({ type: "GET_SETTINGS" });
+  // A language change can arrive while the initial settings read is pending,
+  // before there is an active session for the storage listener to restart.
+  return revision !== settingsRevision && latestSettings ? latestSettings : settings;
+}
+
+export function updatePageTranslationSettings(settings: ExtensionSettings): void {
+  settingsRevision += 1;
+  latestSettings = settings;
+  const session = activeSession;
+  if (session && (session.settings.sourceLang !== settings.sourceLang || session.settings.targetLang !== settings.targetLang)) {
+    // Start from the saved originals, cancelling the old generation before any
+    // late response can render. A hidden or never-started page stays inactive.
+    preserveViewportPosition(() => { void startPageTranslation(settings, false); },
+      [...session.entries.values()].map((entry) => entry.segment));
+    return;
+  }
+  const mode = settings.translationDisplayMode;
+  if (mode !== currentDisplayMode && (mode === "replace" || mode === "bilingual" || mode === "bilingual-accent")) {
+    setPageTranslationDisplayMode(mode);
+  }
 }
 
 export function startPageTranslation(settings: ExtensionSettings, reuseResults = true): Promise<PageTranslationResult> {

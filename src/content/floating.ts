@@ -23,6 +23,7 @@ import {
   hidePageTranslation,
   getPageTranslationDisplayMode,
   getPageTranslationState,
+  loadPageTranslationSettings,
   setPageTranslationDisplayMode,
   startPageTranslation,
   subscribePageTranslationState
@@ -787,7 +788,7 @@ async function togglePageTranslationFromFloating(force = false): Promise<void> {
   try {
     await settingsSave;
     if (actionVersion !== pageActionVersion) return;
-    const settings = await getSettings();
+    const settings = await loadPageTranslationSettings();
     if (actionVersion !== pageActionVersion) return;
     const result = await startPageTranslation(settings, !force);
     if (actionVersion !== pageActionVersion) return;

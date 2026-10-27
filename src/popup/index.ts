@@ -26,6 +26,7 @@ const GITHUB_URL = "https://github.com/mr-wuliu/wupage";
 const WEBSITE_URL = "https://wupage.mrwuliu.top/";
 
 let settings: ExtensionSettings;
+let settingsSave: Promise<void> = Promise.resolve();
 let paragraphMode = false;
 let paragraphModeAvailable = true;
 let pageTranslated = false;
@@ -81,10 +82,10 @@ async function init(): Promise<void> {
   }
   updatePageActionAvailability();
 
-  targetLang.addEventListener("change", savePopupSettings);
-  sourceLang.addEventListener("change", savePopupSettings);
-  provider.addEventListener("change", savePopupSettings);
-  translationDisplayMode.addEventListener("change", savePopupSettings);
+  targetLang.addEventListener("change", saveSettingsFromControl);
+  sourceLang.addEventListener("change", saveSettingsFromControl);
+  provider.addEventListener("change", saveSettingsFromControl);
+  translationDisplayMode.addEventListener("change", saveSettingsFromControl);
   pageToggleButton.addEventListener("click", togglePageTranslation);
   paragraphModeButton.addEventListener("click", toggleParagraphMode);
   floatingBallButton.addEventListener("click", toggleFloatingBall);
@@ -114,7 +115,13 @@ async function init(): Promise<void> {
   });
 }
 
-async function savePopupSettings(): Promise<void> {
+function saveSettingsFromControl(): void {
+  void savePopupSettings().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : String(error));
+  });
+}
+
+function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
     sourceLang: sourceLang.value.trim() || "auto",
@@ -123,8 +130,13 @@ async function savePopupSettings(): Promise<void> {
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
   };
   syncDoubaoTargetControls(settings, targetLang);
-  await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
-  updateLocalNotice();
+  const snapshot = structuredClone(settings);
+  const save = settingsSave.catch(() => undefined).then(async () => {
+    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings: snapshot });
+    updateLocalNotice();
+  });
+  settingsSave = save;
+  return save;
 }
 
 function updateLocalNotice(): void {
@@ -337,7 +349,7 @@ async function toggleFloatingBall(): Promise<void> {
       ...settings,
       floatingBallEnabled
     };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await savePopupSettings();
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (pageTranslationAvailable && !activeTabIsPdf && tab.id) {
       await sendTabMessage<{ enabled: boolean }>(tab.id, {

@@ -7,7 +7,7 @@ vi.mock("../src/content/runtime", () => ({
   sendRuntimeRequest: vi.fn()
 }));
 
-import { clearPageTranslation, getPageTranslationState, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation } from "../src/content/page-translation";
+import { clearPageTranslation, getPageTranslationState, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation, updatePageTranslationSettings } from "../src/content/page-translation";
 import { sendRuntimeRequest } from "../src/content/runtime";
 import { collectParagraphTextSegments, renderTranslations } from "../src/content/dom";
 import { ProviderError } from "../src/shared/errors";
@@ -860,6 +860,72 @@ describe("viewport page translation", () => {
 
     expect(currentScrollY).toBe(3400);
     expect(scrollTo).toHaveBeenCalledWith(0, 3400);
+  });
+
+  it("restarts active translations when the ordinary source language changes", async () => {
+    document.body.innerHTML = "<main><p>Original paragraph.</p></main>";
+    translateNormally();
+    await startPageTranslation(settings);
+    updatePageTranslationSettings({ ...settings, sourceLang: "en" });
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sendRuntimeRequest).mock.calls[1][0]).toMatchObject({
+      sourceLang: "en", targetLang: settings.targetLang, texts: ["Original paragraph."]
+    });
+    expect(getPageTranslationState()).toMatchObject({ active: true, translated: 1, failed: 0 });
+  });
+
+  it("uses the new language for offscreen and dynamically added paragraphs", async () => {
+    document.body.innerHTML = '<main><p data-top="100">First paragraph.</p><p data-top="5100">Later paragraph.</p></main>';
+    translateNormally();
+    await startPageTranslation({ ...settings, targetLang: "ja" });
+    updatePageTranslationSettings(settings);
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+
+    scrollOffset = 5000;
+    window.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => expect(getPageTranslationState().translated).toBe(2));
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", '<p data-top="5200">New paragraph.</p>');
+    await vi.waitFor(() => expect(getPageTranslationState().translated).toBe(3));
+    const requests = vi.mocked(sendRuntimeRequest).mock.calls.map(([request]) => request);
+    expect(requests).toHaveLength(4);
+    expect(requests.slice(1)).toEqual([
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["First paragraph."] }),
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["Later paragraph."] }),
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["New paragraph."] })
+    ]);
+  });
+
+  it("preserves window and nested scroll positions while clearing the old language", async () => {
+    document.body.innerHTML = '<main><section><p>Stable viewport paragraph.</p></section></main>';
+    translateNormally();
+    await startPageTranslation(settings);
+    const container = document.querySelector("section")!;
+    container.scrollTop = 700;
+    container.scrollLeft = 15;
+    let currentScrollY = 3400;
+    vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
+    vi.spyOn(window, "scrollY", "get").mockImplementation(() => currentScrollY);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation((_left, top) => { currentScrollY = Number(top); });
+    const nativeRemove = Element.prototype.remove;
+    vi.spyOn(Element.prototype, "remove").mockImplementation(function (this: Element) {
+      if (this.classList.contains("wupage-translation")) {
+        currentScrollY -= 100;
+        container.scrollTop -= 40;
+        container.scrollLeft = 0;
+      }
+      nativeRemove.call(this);
+    });
+
+    updatePageTranslationSettings({ ...settings, targetLang: "ja" });
+    expect(currentScrollY).toBe(3400);
+    expect(container.scrollTop).toBe(700);
+    expect(container.scrollLeft).toBe(15);
+    expect(scrollTo).toHaveBeenCalledWith(12, 3400);
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+    expect(getPageTranslationState().translated).toBe(1);
   });
 
   it("does not render a late response after translations are cleared", async () => {
