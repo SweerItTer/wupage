@@ -229,15 +229,15 @@ function renderProviderForm(): void {
       <div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div>
       <div class="doubao-setup">
         <h3>豆包网页登录翻译 · 实验功能</h3>
-        <p>无需 API key。在当前浏览器打开豆包并完成登录，再回到这里重新检测。打开网页本身不代表登录成功。</p>
+        <p>无需 API key。在当前浏览器打开豆包并完成登录后，即可直接翻译。扩展会自动准备连接；“重新检测”用于检查连接，不是每次翻译的必需步骤。</p>
         <p>豆包自动识别源语言。翻译时，待译文本会发送到豆包；检测只发送固定短文本。请求会按顺序串行执行，暂不保证所有浏览器和账号可用。</p>
         <div class="doubao-actions">
           <button type="button" data-action="open-doubao">打开豆包并登录</button>
           <button type="button" data-action="check-doubao">重新检测</button>
         </div>
         <p data-role="doubao-status" role="status" aria-live="polite"></p>
-        <p class="hint">如提示登录失效，请重新登录后检测；如遇限流，请等待。登录状态由浏览器管理，无需复制 Cookie。</p>
-        <p class="hint">实现思路与协议研究参考 <a href="https://github.com/Haleclipse" target="_blank" rel="noopener noreferrer">Haleclipse</a> 的 CometixTranslate，来源：<a href="https://linux.do/t/topic/2910452/10" target="_blank" rel="noopener noreferrer">Linux.do 原帖</a>。</p>
+        <p class="hint">如提示登录失效，请重新登录后重试翻译，或点击重新检测；如遇限流，请等待。登录状态由浏览器管理，无需复制 Cookie。</p>
+        <p class="hint">实现思路与协议研究参考 <a href="https://github.com/Haleclipse" target="_blank" rel="noopener noreferrer">Haleclipse</a> 的 CometixTranslate，来源：<a href="https://linux.do/t/topic/2910452" target="_blank" rel="noopener noreferrer">Linux.do 原帖</a>。</p>
       </div>`;
     providerForm.querySelector<HTMLButtonElement>("[data-action='open-doubao']")?.addEventListener("click", () => {
       void chrome.tabs.create({ url: "https://www.doubao.com/" }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error)));

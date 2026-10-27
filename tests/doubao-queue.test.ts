@@ -113,16 +113,15 @@ describe("Doubao shared queue and recovery", () => {
     await vi.runAllTimersAsync();
     expect(await first).toMatchObject({ errorCode });
     expect(await waiting).toMatchObject({ errorCode });
-    expect(await translate()).toMatchObject({ errorCode });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    if (httpStatus === 401) fetchMock.mockResolvedValueOnce(launch());
+    fetchMock.mockResolvedValueOnce(launch());
     fetchMock.mockResolvedValueOnce(translated());
     const probe = doubao.checkDoubao();
     expect(doubao.checkDoubao()).toBe(probe);
     expect(doubao.getDoubaoStatus().state).toBe("checking");
     await vi.runAllTimersAsync();
     expect(await probe).toMatchObject({ state: "ready", checkedAt: Date.now() });
-    expect(fetchMock.mock.calls.filter(([_url, init]) => !init.body)).toHaveLength(httpStatus === 401 ? 2 : 1);
+    expect(fetchMock.mock.calls.filter(([_url, init]) => !init.body)).toHaveLength(2);
     const afterCheck = fetchMock.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetchMock).toHaveBeenCalledTimes(afterCheck);

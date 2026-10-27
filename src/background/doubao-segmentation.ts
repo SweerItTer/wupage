@@ -1,6 +1,6 @@
 // Integration inspired by CometixTranslate by Haleclipse; independently implemented.
 // https://github.com/Haleclipse
-// https://linux.do/t/topic/2910452/10
+// https://linux.do/t/topic/2910452
 import { ProviderError } from "../shared/errors";
 
 export interface DoubaoSegment {

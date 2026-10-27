@@ -14,11 +14,11 @@
     "product": "prd.md",
     "implementation": "spec.md"
   },
-  "current_delivery": "实验代码实现完成，已提交自身 fork main 的 PR #1。实现提交的 GitHub CI 全部通过（61个文件、688项测试，7项Python测试，双构建与测试ZIP）；PR等待维护者审核，真实豆包会话与效果待打包实测。",
+  "current_delivery": "初版普通翻译已获维护者实测确认。本次来源链接、首启失败恢复、状态更新、取消初始化和PDF暂停修复完成，本地62个文件701项测试、7项Python测试及双构建通过；最新CI见PR #1，真实首启复测仍待完成。",
   "reference": {
     "author": "Haleclipse",
     "author_url": "https://github.com/Haleclipse",
-    "source_url": "https://linux.do/t/topic/2910452/10",
+    "source_url": "https://linux.do/t/topic/2910452",
     "primary_file": "cometix-translate.user.js",
     "primary_version": "1.32.7.113",
     "primary_sha256": "e4816e578aeedfa0c4fb1171f8ae107ef7af0d5fc2716c62f4caa2e3eeda758b",
@@ -123,7 +123,8 @@
       "tasks": [
         "T17",
         "T18",
-        "T19"
+        "T19",
+        "T20"
       ],
       "exit_gate": "实际平台矩阵、现有服务回归、来源署名与必要构建验证完成。"
     }
@@ -194,7 +195,7 @@
         "AC-04",
         "AC-09"
       ],
-      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+      "progress_note": "维护者已报告普通翻译正常，但未提供浏览器、版本和 Origin 对照；平台与请求证据仍待补齐。首次启动问题由 T20 跟进。"
     },
     {
       "id": "T03",
@@ -230,7 +231,7 @@
         "AC-04",
         "AC-09"
       ],
-      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+      "progress_note": "维护者报告普通翻译正常；目标语言、长度边界、浏览器版本及完整平台矩阵尚未提供，仍需逐项验收。"
     },
     {
       "id": "T04",
@@ -294,7 +295,7 @@
       ],
       "acceptance": [
         "后台 credentials include；固定两个 HTTPS endpoint，禁止重定向，不接收任意 URL/Origin",
-        "初始化单飞；launch 失败明确传播，成功不能直接标记 ready",
+        "初始化单飞；launch 网络瞬断/5xx仅有限重试并与文章请求共享额外尝试预算，其余失败明确传播；launch成功不能直接标记ready",
         "DNR 限定自身 initiator、精确 endpoint、POST/XHR；独立规则范围，最后使用者释放",
         "启动只清自己的遗留规则，Ollama 规则和普通豆包网页请求不受影响"
       ],
@@ -340,7 +341,7 @@
         "网络并发 1、开始间隔至少 1000ms、每请求最多 10 项/2000 code unit",
         "保留保护标记、代理对、原索引与边界空白；纯保护符/空白片段本地保留；拆分后原文可精确重组",
         "请求首响应25s/闲置20s/总60s，读取响应体期间仍有效",
-        "一个逻辑调用最多一次额外网络尝试；缺项补发与瞬断重试共享预算；鉴权/403/429/协议/超时不自动重试",
+        "一个逻辑调用最多一次额外网络尝试；launch瞬断/5xx、文章瞬断/5xx与缺项补发共享预算；鉴权/403/429/协议/超时不自动重试原任务",
         "支持父级110s绝对deadline；超时移除等待项、中止流并释放资源"
       ],
       "verification": [
@@ -523,13 +524,13 @@
         "跨消息层保留 errorCode/retryAfterMs"
       ],
       "acceptance": [
-        "重新检测不读缓存、不用页面正文，仅真实固定短文成功才 ready",
+        "重新检测不读缓存、不用页面正文；完整网络检测或普通文章翻译成功才ready，launch/纯本地返回/缓存命中不能假报登录成功",
         "TEST_PROVIDER 与生产调用使用同一队列和110s预算",
         "两个消息封装及页面状态保留错误码/冷却时间，其他服务原错误处理不回归",
-        "认证/拒绝/限流释放已排队普通任务，主动检测可恢复且不绕过冷却与速率限制"
+        "认证/拒绝/限流释放旧队列；后续新翻译与主动检测均可共享新会话准备，不强制到设置解锁，不绕过冷却与速率限制"
       ],
       "verification": [
-        "设置、网页消息两条路径及阻塞后重新检测测试"
+        "设置、网页消息两条路径、错误后新翻译恢复与手动检测测试"
       ],
       "prd_acceptance": [
         "AC-02",
@@ -571,7 +572,7 @@
       ],
       "acceptance": [
         "只有说明、打开豆包、重新检测和状态，无 API Key/Cookie/model/prompt/URL 表单",
-        "选择服务不自动打开网站或发送页面内容",
+        "选择服务不自动打开网站或发送页面内容；说明登录后可直接翻译，重新检测是可选诊断",
         "检测重复点击合并，切换服务后忽略旧检测结果",
         "显示源语言自动识别，不覆盖全局源语言；展示作者和原帖来源入口"
       ],
@@ -775,7 +776,7 @@
       ],
       "acceptance": [
         "各入口总并发仍为1，重试与缺项补发不相乘",
-        "登录退出/403/429后普通队列释放，不自动重放；手动检测可按规则恢复",
+        "登录退出/403/429后旧队列释放且不自动重放；后续新翻译或手动检测可按规则准备新会话，429仍遵守冷却",
         "首响应后卡住、半帧、超过1MB、110s耗尽均结束并清理reader/规则/等待者",
         "普通豆包网页和其他provider请求头不被改写"
       ],
@@ -822,7 +823,7 @@
       "prd_acceptance": [
         "AC-09"
       ],
-      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+      "progress_note": "维护者已报告普通翻译正常；尚缺浏览器及版本、首次启动修复复测和完整回归矩阵，不记为全部验收通过。"
     },
     {
       "id": "T18",
@@ -851,7 +852,7 @@
         "README致谢、操作说明、适配器文件头、实现说明与拟议PR说明"
       ],
       "acceptance": [
-        "保留 Haleclipse、https://github.com/Haleclipse 和 https://linux.do/t/topic/2910452/10",
+        "保留 Haleclipse、https://github.com/Haleclipse 和 https://linux.do/t/topic/2910452",
         "明确 Cometix 提供思路与协议参考，WuPage按自身架构独立适配；保留原项目版权",
         "说明同浏览器登录、待译文字发送豆包、有限支持与错误恢复；不宣称免登录/无限免费",
         "不把第三方依赖许可证扩大成Cometix整项目授权；直接复制代码前另核对许可"
@@ -932,6 +933,65 @@
         "https://github.com/SweerItTer/wupage/actions/runs/40454016759",
         "../doubao-web-verification.md"
       ]
+    },
+    {
+      "id": "T20",
+      "phase": "P4",
+      "title": "修复首次启动失败后的会话恢复并复测",
+      "status": "in_progress",
+      "depends_on": [
+        "T19"
+      ],
+      "spec_sections": [
+        "5.2",
+        "5.3",
+        "5.4"
+      ],
+      "files": [
+        "src/background/doubao.ts",
+        "src/shared/doubao-ui.ts",
+        "src/options/index.ts",
+        "tests/doubao-provider.test.ts",
+        "tests/doubao-queue.test.ts",
+        "tests/doubao-ui.test.ts",
+        "docs/doubao-web-verification.md",
+        "tests/doubao-startup.test.ts",
+        "src/pdf/index.ts",
+        "tests/pdf-opening.test.ts"
+      ],
+      "deliverables": [
+        "初次launch有限重试、失败后的新翻译会话恢复及真实成功状态更新",
+        "登录后直接翻译的说明与首次启动复测记录"
+      ],
+      "acceptance": [
+        "已有正常登录态时直接开始翻译，无需先进入设置点击重新检测",
+        "launch网络瞬断/5xx仅有限重试；与后续文章请求和缺项补发共享一次额外尝试预算",
+        "鉴权/403使原任务失败并释放旧队列；新发起的翻译共享fresh launch，不自动重放旧任务",
+        "实际完整文章翻译成功更新ready与最近验证时间；launch、纯空白/保护符及本地缓存不假报登录成功",
+        "429冷却、共享并发/请求间隔和110秒总预算继续生效",
+        "来源统一为https://linux.do/t/topic/2910452，保留Haleclipse署名",
+        "维护者复测浏览器重启、扩展重载和失败后直接重试；记录浏览器版本与结果",
+        "PDF遇到登录/拒绝/限流等终止错误停止自动派发和滚动补译，显式新翻译才恢复；已完成内容与原文保留"
+      ],
+      "verification": [
+        "针对初始化瞬断、拒绝后新请求、并发恢复及状态一致性的回归",
+        "类型检查、全量测试、两种浏览器构建和PR CI",
+        "维护者在新测试包中不预先点击检测，复测首次启动"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
+      "progress_note": "实现及本地自动化验证完成，新增启动专项9项和PDF边界4项；全量62个文件701项测试通过，双构建通过。最新PR CI以检查结果为准，真实首次启动复测待维护者完成。",
+      "implementation_status": "completed",
+      "manual_verification_status": "pending",
+      "evidence": [
+        "tests/doubao-startup.test.ts",
+        "tests/pdf-opening.test.ts",
+        "../doubao-web-verification.md"
+      ]
     }
   ],
   "verification_report": "../doubao-web-verification.md",
@@ -945,5 +1005,13 @@
     "vitest_tests": 688,
     "python_tests": 7,
     "latest_status": "以后续PR检查为准"
+  },
+  "user_feedback": {
+    "date": "2026-10-27",
+    "source": "repository maintainer report",
+    "translation_result": "维护者报告测试没问题、翻译正常。",
+    "reported_issue": "首次启动翻译失败，需要手动进入设置点击检查后才可翻译。",
+    "evidence_limit": "未提供浏览器及版本、首次错误码、目标语言或完整场景清单；不据此将 Chrome / Edge 整个平台矩阵标为通过。",
+    "follow_up_task": "T20"
   }
 }

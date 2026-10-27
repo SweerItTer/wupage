@@ -105,15 +105,17 @@ npm run build
 
 `doubao-web` 将有序字符串数组交给既有的网页、PDF 和 OCR 文字翻译链路，不属于 LLM 提示词 provider。后台只请求固定的豆包 launch 与文章 SSE 接口；所有入口共用并发为 1 的队列，相邻网络请求至少间隔 1 秒。源语言按 `auto` 归一化，页面上下文不发送给豆包，缓存包含协议版本。
 
+普通翻译会自动准备会话，无需先点击“重新检测”。launch 的网络瞬断 / 5xx 可进行一次有限重试，与后续文章请求及缺项补发共享额外尝试预算。鉴权或服务拒绝会使旧任务失败并释放等待队列；用户新发起的翻译会共享一次新的 launch，再由实际文章结果验证连接。完整的网络翻译成功后更新状态，纯空白、纯保护符或缓存命中不算登录成功。429 冷却仍约束新翻译和手动检测，旧任务不自动重放。
+
 - `src/background/doubao.ts`：初始化、登录检测、队列、限流与超时。
 - `src/background/doubao-sse.ts`、`doubao-segmentation.ts`：流式事件校验、索引聚合、超长文本拆分与重组。
 - `src/background/doubao-compatibility.ts`：只作用于本扩展发往两个固定接口的临时 Origin 规则，结束时清理；规则编号与 Ollama 分离。
 - `src/shared/doubao.ts`、`doubao-ui.ts`：平台、语言与无密钥界面的共享逻辑。
 - `tests/doubao-*.test.ts`：使用合成响应和模拟网络，不需要账号或 Cookie；覆盖协议错误、缺项补发、全局排队、总预算、结构保护、缓存、设置迁移和界面恢复。
 
-设计与需求见 [spec.md](doubao-web/spec.md)、[prd.md](doubao-web/prd.md) 和 [task.json](doubao-web/task.json)。自动验证与真实浏览器的待验项分列在[验证记录](doubao-web-verification.md)。通过 mock 测试和构建不能证明私有接口当前可用；Chrome / Edge 的实际登录、Cookie 策略和翻译效果需要独立验收，Firefox 暂禁用此 provider。
+设计与需求见 [spec.md](doubao-web/spec.md)、[prd.md](doubao-web/prd.md) 和 [task.json](doubao-web/task.json)。自动验证、维护者的实测反馈及真实浏览器的待验项分列在[验证记录](doubao-web-verification.md)。维护者已报告普通翻译正常，同时报告首次启动恢复问题；本次修复的真实浏览器复测仍待完成。浏览器版本、Cookie 策略及完整平台矩阵需要分别记录，Firefox 暂禁用此 provider。
 
-接入思路与协议参考 [Haleclipse](https://github.com/Haleclipse) 的 CometixTranslate，来源：[Linux.do 原帖](https://linux.do/t/topic/2910452/10)。实现按 WuPage 架构独立编写，未收录参考脚本及打包代码。
+接入思路与协议参考 [Haleclipse](https://github.com/Haleclipse) 的 CometixTranslate，来源：[Linux.do 原帖](https://linux.do/t/topic/2910452)。实现按 WuPage 架构独立编写，未收录参考脚本及打包代码。
 
 ### PDF 排版回归
 

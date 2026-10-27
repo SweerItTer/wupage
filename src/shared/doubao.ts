@@ -1,5 +1,5 @@
 // Protocol reference: Haleclipse / CometixTranslate.
-// https://github.com/Haleclipse · https://linux.do/t/topic/2910452/10
+// https://github.com/Haleclipse · https://linux.do/t/topic/2910452
 export const DOUBAO_PROTOCOL_VERSION = 1;
 export const DOUBAO_TARGET_LANGUAGES: Readonly<Record<string, string>> = {
   "zh-CN": "zh", en: "en", ja: "ja", ko: "ko", fr: "fr", de: "de", es: "es", ru: "ru"

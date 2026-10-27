@@ -2,7 +2,7 @@
  * Doubao web-session compatibility, independently adapted for WuPage.
  * Protocol reference: Haleclipse's CometixTranslate
  * https://github.com/Haleclipse
- * https://linux.do/t/topic/2910452/10
+ * https://linux.do/t/topic/2910452
  */
 import { ProviderError } from "../shared/errors";
 

@@ -67,7 +67,7 @@ describe("Doubao provider controls", () => {
     expect(document.querySelector("#providerForm .provider-performance")).toBeNull();
     expect(query<HTMLElement>("#providerForm").textContent).toContain("按顺序串行执行");
     expect(document.querySelector('#providerForm a[href="https://github.com/Haleclipse"]')?.textContent).toBe("Haleclipse");
-    expect(document.querySelector('#providerForm a[href="https://linux.do/t/topic/2910452/10"]')).not.toBeNull();
+    expect(document.querySelector('#providerForm a[href="https://linux.do/t/topic/2910452"]')).not.toBeNull();
     expect(createTab).not.toHaveBeenCalled();
     expect(requests("CHECK_DOUBAO")).toHaveLength(0);
     query<HTMLButtonElement>("#save").click();
@@ -76,7 +76,7 @@ describe("Doubao provider controls", () => {
     expect(stored.providers.find((provider) => provider.id === "doubao-web")).toMatchObject({ performanceMode: "custom", chunkSize: 1200, concurrency: 1 });
     query<HTMLButtonElement>("[data-action='open-doubao']").click();
     expect(createTab).toHaveBeenCalledWith({ url: "https://www.doubao.com/" });
-    expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("尚未检测");
+    expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("尚未验证");
     await chooseOptionsProvider("google-web-translate");
     expect(query<HTMLSelectElement>("#sourceLang").value).toBe("en");
     expect(query<HTMLSelectElement>("#sourceLang").disabled).toBe(false);
@@ -119,8 +119,8 @@ describe("Doubao provider controls", () => {
     });
     await launch("options");
     query<HTMLButtonElement>("[data-action='check-doubao']").click();
-    await vi.waitFor(() => expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("最近一次检测通过"));
-    expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("最近检测");
+    await vi.waitFor(() => expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("最近一次翻译或检测成功"));
+    expect(query<HTMLElement>("[data-role='doubao-status']").textContent).toContain("最近验证");
     finishRead({ ok: true, data: { state: "login-required" } });
     await Promise.resolve();
     await Promise.resolve();

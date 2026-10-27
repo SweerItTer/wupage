@@ -2,7 +2,7 @@
  * Doubao web-session translation, independently implemented for WuPage.
  * Protocol reference: Haleclipse's CometixTranslate
  * https://github.com/Haleclipse
- * https://linux.do/t/topic/2910452/10
+ * https://linux.do/t/topic/2910452
  */
 import type { DoubaoStatus, DoubaoStatusState, DoubaoWebConfig, TranslateBatchRequest, TranslatorProvider, ValidationResult } from "../shared/types";
 import { ProviderError } from "../shared/errors";
@@ -23,7 +23,7 @@ const DEFAULT_COOLDOWN_MS = 60_000;
 interface SessionConfig { deviceId: string; country: string }
 interface Initialization {
   controller: AbortController;
-  promise: Promise<void>;
+  promise: Promise<number>;
   users: number;
 }
 interface QueueEntry {
@@ -40,7 +40,10 @@ let initialization: Initialization | undefined;
 let devicePromise: Promise<string> | undefined;
 let tabId: string | undefined;
 let status: DoubaoStatus = { state: "unknown" };
-let blocked: ProviderError | undefined;
+let blockingFailure: ProviderError | undefined;
+let failureGeneration = 0;
+const taskGenerations = new WeakMap<AbortSignal, number>();
+const reportedErrors = new WeakSet<ProviderError>();
 let retryAt = 0;
 let checkPromise: Promise<DoubaoStatus> | undefined;
 let draining = false;
@@ -106,6 +109,9 @@ export async function withDoubaoDeadline<T>(
   parent?: AbortSignal
 ): Promise<T> {
   const controller = new AbortController();
+  // Capture before the shared provider/global queues. A failed generation must
+  // never be revived by a later, successful user-initiated translation.
+  taskGenerations.set(controller.signal, parent ? taskGeneration(parent) : failureGeneration);
   const onAbort = () => controller.abort(parent && abortReason(parent));
   if (parent?.aborted) onAbort();
   else parent?.addEventListener("abort", onAbort, { once: true });
@@ -127,32 +133,49 @@ const ERROR_STATES = new Set<DoubaoStatusState>([
   "network-error", "timeout", "protocol-changed", "incomplete", "unsupported-browser", "unsupported-language"
 ]);
 
-function updateErrorStatus(error: ProviderError): void {
+function updateErrorStatus(error: ProviderError, checking = false): void {
+  // One failed request can reject several callers. Their late catches must not
+  // replace a newer successful connection result with the same old failure.
+  if (reportedErrors.has(error) && !(checking && status.state === "checking")) return;
+  reportedErrors.add(error);
   status = {
     state: ERROR_STATES.has(error.errorCode as DoubaoStatusState) ? error.errorCode as DoubaoStatusState : "network-error",
     message: error.message,
-    ...(status.checkedAt !== undefined ? { checkedAt: status.checkedAt } : {}),
+    checkedAt: Date.now(),
     ...(retryAt > Date.now() ? { retryAt } : {})
   };
 }
 
-function assertAllowed(probe: boolean): void {
+function taskGeneration(signal: AbortSignal): number {
+  const existing = taskGenerations.get(signal);
+  if (existing !== undefined) return existing;
+  taskGenerations.set(signal, failureGeneration);
+  return failureGeneration;
+}
+
+function assertAllowed(probe: boolean, signal: AbortSignal): void {
   if (retryAt > Date.now()) {
-    throw new ProviderError("豆包请求受限，请等待后重新检测。", "rate-limited", retryAt - Date.now());
+    const error = new ProviderError("豆包请求受限，请等待后重试翻译或重新检测。", "rate-limited", retryAt - Date.now());
+    reportedErrors.add(error);
+    throw error;
   }
-  // Failed work was already rejected. After cooldown only newly submitted
-  // work may run; the queue never retains requests for automatic replay.
-  if (blocked?.errorCode === "rate-limited") blocked = undefined;
-  if (blocked && !probe) {
-    throw new ProviderError(blocked.message, blocked.errorCode,
-      blocked.errorCode === "rate-limited" ? Math.max(0, retryAt - Date.now()) : undefined);
+  // Reject work that was already waiting when the service failed. A NEW
+  // top-level task can prepare a fresh session and try normally; opening the
+  // settings page is not a prerequisite for recovery.
+  if (!probe && blockingFailure && taskGeneration(signal) < failureGeneration) {
+    const error = new ProviderError(blockingFailure.message, blockingFailure.errorCode,
+      blockingFailure.errorCode === "rate-limited" ? Math.max(0, retryAt - Date.now()) : undefined);
+    reportedErrors.add(error);
+    throw error;
   }
 }
 
 function recordRequestFailure(error: ProviderError): void {
+  if (reportedErrors.has(error)) return;
   if (error.errorCode === "login-required" || error.errorCode === "service-rejected" || error.errorCode === "rate-limited") {
-    blocked = error;
-    if (error.errorCode === "login-required") session = undefined;
+    blockingFailure = error;
+    failureGeneration++;
+    if (error.errorCode !== "rate-limited") session = undefined;
     if (error.errorCode === "rate-limited") {
       retryAt = Date.now() + Math.max(DEFAULT_COOLDOWN_MS, error.retryAfterMs ?? 0);
     }
@@ -170,7 +193,7 @@ function recordRequestFailure(error: ProviderError): void {
 
 function enqueue<T>(probe: boolean, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
   throwIfAborted(signal);
-  assertAllowed(probe);
+  assertAllowed(probe, signal);
   return new Promise<T>((resolve, reject) => {
     const entry: QueueEntry = {
       signal, probe, reject, started: false,
@@ -198,7 +221,7 @@ async function drain(): Promise<void> {
       entry.started = true;
       try {
         throwIfAborted(entry.signal);
-        assertAllowed(entry.probe);
+        assertAllowed(entry.probe, entry.signal);
         await entry.execute();
       } catch (error) {
         entry.reject(error);
@@ -266,11 +289,11 @@ function retryAfter(response: Response): number {
 }
 
 function httpError(response: Response): ProviderError {
-  if (response.status === 401) return new ProviderError("请先在同一浏览器登录豆包，再重新检测。", "login-required");
-  if (response.status === 429) return new ProviderError("豆包请求受限，请等待后重新检测。", "rate-limited", retryAfter(response));
+  if (response.status === 401) return new ProviderError("请先在同一浏览器登录豆包，再重试翻译或重新检测。", "login-required");
+  if (response.status === 429) return new ProviderError("豆包请求受限，请等待后重试翻译或重新检测。", "rate-limited", retryAfter(response));
   if (response.status >= 500) return new TransientNetworkError();
   if (response.status === 408) return timeoutError();
-  return new ProviderError(`豆包拒绝了请求（HTTP ${response.status}），请到豆包网页检查后重新检测。`, "service-rejected");
+  return new ProviderError(`豆包拒绝了请求（HTTP ${response.status}），请到豆包网页检查后重试翻译或重新检测。`, "service-rejected");
 }
 
 async function consumeBody(
@@ -341,7 +364,7 @@ async function physicalRequest<T>(
         const parameters = await abortable(queryParameters(), controller.signal);
         await delay(lastRequestStartedAt === undefined ? 0 : lastRequestStartedAt + MIN_REQUEST_INTERVAL_MS - Date.now(), controller.signal);
         throwIfAborted(controller.signal);
-        assertAllowed(probe);
+        assertAllowed(probe, signal);
         lastRequestStartedAt = Date.now();
         headersTimer = setTimeout(() => controller.abort(timeoutError("豆包未及时响应，请稍后重试。")), HEADERS_TIMEOUT_MS);
         const response = await abortable(fetch(`${endpoint}?${parameters}`, {
@@ -376,13 +399,26 @@ async function physicalRequest<T>(
   });
 }
 
-async function ensureSession(signal: AbortSignal, probe: boolean): Promise<void> {
-  if (session) return;
+async function ensureSession(signal: AbortSignal, probe: boolean): Promise<number> {
+  if (session) return 0;
+  // The previous last waiter may have aborted before the shared Promise's
+  // finally handler ran. A fresh request must not join that doomed operation.
+  if (initialization?.controller.signal.aborted) initialization = undefined;
   if (!initialization) {
-    const entry: Initialization = { controller: new AbortController(), users: 0, promise: Promise.resolve() };
+    const entry: Initialization = { controller: new AbortController(), users: 0, promise: Promise.resolve(0) };
     initialization = entry;
     entry.promise = withDoubaoDeadline(async (initSignal) => {
-      const payload = await physicalRequest(DOUBAO_LAUNCH_ENDPOINT, undefined, probe, initSignal, readJson);
+      let retries = 0;
+      let payload: Record<string, unknown>;
+      try {
+        payload = await physicalRequest(DOUBAO_LAUNCH_ENDPOINT, undefined, probe, initSignal, readJson);
+      } catch (error) {
+        if (!(error instanceof TransientNetworkError) || initSignal.aborted) throw error;
+        retries = 1;
+        await delay(MIN_REQUEST_INTERVAL_MS, initSignal);
+        payload = await physicalRequest(DOUBAO_LAUNCH_ENDPOINT, undefined, probe, initSignal, readJson);
+      }
+      throwIfAborted(initSignal);
       if (payload.code !== 0) throw doubaoServiceError(payload.code);
       const data = payload.data;
       if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -393,6 +429,7 @@ async function ensureSession(signal: AbortSignal, probe: boolean): Promise<void>
       const serverDeviceId = typeof details.web_id === "string" || typeof details.web_id === "number" ? String(details.web_id) : "";
       if (details.ttwid && !serverDeviceId) throw new ProviderError("豆包初始化缺少设备信息。", "protocol-changed");
       session = { deviceId: details.ttwid ? serverDeviceId : "0", country: typeof country === "string" ? country : "" };
+      return retries;
     }, entry.controller.signal).catch((error) => {
       const normalized = asProviderError(error);
       recordRequestFailure(normalized);
@@ -405,10 +442,12 @@ async function ensureSession(signal: AbortSignal, probe: boolean): Promise<void>
   const entry = initialization;
   entry.users++;
   try {
-    await abortable(entry.promise, signal);
+    return await abortable(entry.promise, signal);
   } finally {
     entry.users--;
-    if (!entry.users && initialization === entry) entry.controller.abort(new DOMException("Aborted", "AbortError"));
+    if (!entry.users && initialization === entry) {
+      entry.controller.abort(signal.aborted ? abortReason(signal) : new DOMException("Aborted", "AbortError"));
+    }
   }
 }
 
@@ -431,12 +470,21 @@ async function article(
       parser.push(chunk);
       return parser.done;
     });
-    return parser.finish();
+    const translations = parser.finish();
+    if (translations.every((value) => value !== undefined)) {
+      throwIfAborted(controller.signal);
+      // Commit health while still owning the physical queue slot. A later
+      // response must win over an earlier caller's Promise continuation.
+      retryAt = 0;
+      status = { state: "ready", checkedAt: Date.now(), message: "可以翻译" };
+    }
+    return translations;
   });
 }
 
 async function translateTexts(request: TranslateBatchRequest, signal: AbortSignal, probe: boolean): Promise<string[]> {
   throwIfAborted(signal);
+  taskGeneration(signal);
   if (!request.texts.length) return [];
   if (!isDoubaoBrowserSupported()) {
     throw new ProviderError("豆包网页登录翻译目前仅在 Chromium 扩展中开放测试，Firefox 尚未支持。", "unsupported-browser");
@@ -444,13 +492,13 @@ async function translateTexts(request: TranslateBatchRequest, signal: AbortSigna
   const target = Object.prototype.hasOwnProperty.call(DOUBAO_TARGET_LANGUAGES, request.targetLang)
     ? DOUBAO_TARGET_LANGUAGES[request.targetLang] : undefined;
   if (!target) throw new ProviderError("豆包暂不支持所选目标语言，请选择列表中的语言。", "unsupported-language");
-  assertAllowed(probe);
+  assertAllowed(probe, signal);
   const segments = segmentDoubaoTexts(request.texts);
   const groups = groupDoubaoSegments(segments);
   if (!groups.length) return reassembleDoubaoSegments(request.texts.length, segments, new Map());
-  await ensureSession(signal, probe);
+  const initializationRetries = await ensureSession(signal, probe);
   const translated = new Map<number, string>();
-  let additionalAttempts = 1;
+  let additionalAttempts = 1 - initializationRetries;
   for (const group of groups) {
     let missing = group;
     for (;;) {
@@ -507,21 +555,17 @@ export function getDoubaoStatus(): DoubaoStatus {
   return { ...status };
 }
 
-/** Explicit user probe is allowed through auth/rejection blocking, not cooldown. */
+/** Optional diagnostic; normal new translation tasks can also refresh a failed session. */
 export function checkDoubao(): Promise<DoubaoStatus> {
   if (checkPromise) return checkPromise;
   status = { state: "checking", message: "正在检测豆包翻译…" };
   checkPromise = withDoubaoDeadline(async (signal) => {
     const result = await translateTexts({ texts: ["Hello world"], targetLang: "zh-CN", sourceLang: "auto" }, signal, true);
     if (result.length !== 1 || !result[0]?.trim()) throw new ProviderError("豆包检测未返回有效译文。", "incomplete");
-    blocked = undefined;
-    retryAt = 0;
-    status = { state: "ready", checkedAt: Date.now(), message: "可以翻译" };
     return getDoubaoStatus();
   }).catch((error) => {
     const normalized = asProviderError(error);
-    updateErrorStatus(normalized);
-    status.checkedAt = Date.now();
+    updateErrorStatus(normalized, true);
     return getDoubaoStatus();
   }).finally(() => { checkPromise = undefined; });
   return checkPromise;
