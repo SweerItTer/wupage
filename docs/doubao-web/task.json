@@ -1,0 +1,933 @@
+{
+  "schema_version": "1.0",
+  "project": "SweerItTer/wupage",
+  "feature": "doubao-web",
+  "title": "豆包网页登录翻译：阶段实现任务",
+  "created": "2026-10-27",
+  "status": "in_progress",
+  "baseline": {
+    "branch": "main",
+    "commit": "072c08cd9e4b83d9e224aaa662872d8b47e0c796",
+    "version": "1.2.0"
+  },
+  "documents": {
+    "product": "prd.md",
+    "implementation": "spec.md"
+  },
+  "current_delivery": "实验实现和本地自动化验证完成，已准备提交自身 fork main 的 PR；真实豆包登录、浏览器请求与效果验收按维护者要求留待 PR / CI 后打包测试。",
+  "reference": {
+    "author": "Haleclipse",
+    "author_url": "https://github.com/Haleclipse",
+    "source_url": "https://linux.do/t/topic/2910452/10",
+    "primary_file": "cometix-translate.user.js",
+    "primary_version": "1.32.7.113",
+    "primary_sha256": "e4816e578aeedfa0c4fb1171f8ae107ef7af0d5fc2716c62f4caa2e3eeda758b",
+    "supplemental_file": "CometixTranslate.zip",
+    "supplemental_version": "1.32.7.108（前段自洽归档）",
+    "attribution_required_in": [
+      "README致谢",
+      "豆包适配器文件头",
+      "实现文档",
+      "PR描述"
+    ],
+    "reuse_rule": "按观测协议独立实现；署名不替代直接复制源码所需许可。"
+  },
+  "scope": {
+    "engine": "translate_service='1'",
+    "transport": "article SSE",
+    "inputs": [
+      "网页全文",
+      "段落",
+      "文本层PDF",
+      "本地OCR文字"
+    ],
+    "excluded": [
+      "新增字幕服务",
+      "豆包图片上传/OCR接口",
+      "聊天页面自动化",
+      "密钥或Cookie导入",
+      "新增端到端前台取消协议"
+    ],
+    "initial_browsers": [
+      "Chrome",
+      "Edge"
+    ],
+    "conditional_browser": "Firefox 单独验收；未通过不启用豆包，但保留其他服务"
+  },
+  "execution": {
+    "allowed_task_statuses": [
+      "pending",
+      "in_progress",
+      "blocked",
+      "completed"
+    ],
+    "completion_rule": "交付物与验收证据均存在才可完成；静态分析不能替代真实会话验证。",
+    "dependency_rule": "实现依赖使用 implementation_depends_on（若存在），其余沿用 depends_on；原 depends_on 和阶段退出条件保留为完整验收门槛。",
+    "failure_rule": "P0协议或平台关键条件失败则记录blocked与证据，不能用猜测、放宽校验或静默切换服务替代。",
+    "order_note": "同阶段无依赖的任务可并行；不自动发布、推标签或合并PR。",
+    "sequence_change": {
+      "date": "2026-10-27",
+      "requested_by": "repository maintainer",
+      "instruction": "先新建分支完成实现并提交自己的 main 审核、通过 CI，再打包测试实际效果。",
+      "effect": "允许 P1/P2、无账号回归和评审准备先于 P0 真实会话验证；未完成的人工验收不标为通过。"
+    }
+  },
+  "phases": [
+    {
+      "id": "P0",
+      "title": "协议和浏览器可行性",
+      "tasks": [
+        "T01",
+        "T02",
+        "T03"
+      ],
+      "exit_gate": "Chrome/Edge真实登录后的文章翻译、登出恢复、有效Origin模式与支持矩阵有证据。"
+    },
+    {
+      "id": "P1",
+      "title": "豆包适配器",
+      "tasks": [
+        "T04",
+        "T05",
+        "T06",
+        "T07"
+      ],
+      "exit_gate": "SSE、会话、DNR、共享队列、错误与预算可在无账号测试中验证。"
+    },
+    {
+      "id": "P2",
+      "title": "配置、调度和界面",
+      "tasks": [
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12"
+      ],
+      "exit_gate": "普通用户通过登录和检测即可使用；配置迁移、native数组、缓存和状态恢复一致。"
+    },
+    {
+      "id": "P3",
+      "title": "保真与故障回归",
+      "tasks": [
+        "T13",
+        "T14",
+        "T15",
+        "T16"
+      ],
+      "exit_gate": "网页、代码、PDF、OCR保持既有能力；故障不会丢原文、缓存坏结果或继续重试。"
+    },
+    {
+      "id": "P4",
+      "title": "浏览器联调与贡献准备",
+      "tasks": [
+        "T17",
+        "T18",
+        "T19"
+      ],
+      "exit_gate": "实际平台矩阵、现有服务回归、来源署名与必要构建验证完成。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T01",
+      "phase": "P0",
+      "title": "复现作者脚本的真实登录翻译",
+      "status": "pending",
+      "depends_on": [],
+      "spec_sections": [
+        "1",
+        "2",
+        "3.1"
+      ],
+      "files": [
+        "docs/doubao-web-verification.md"
+      ],
+      "deliverables": [
+        "记录 Chrome/Edge、脚本管理器、脚本版本、日期和脱敏结果"
+      ],
+      "acceptance": [
+        "使用用户提供的 Cometix 1.32.7.113；同一 profile 登录后两段文本可翻译",
+        "记录退出登录、重新登录及关闭豆包标签页的行为；不保存 Cookie 或未脱敏 HAR"
+      ],
+      "verification": [
+        "人工浏览器测试；不将 node --check 当成在线验证"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-09"
+      ],
+      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+    },
+    {
+      "id": "T02",
+      "phase": "P0",
+      "title": "验证 WuPage 后台的请求与 Origin 条件",
+      "status": "pending",
+      "depends_on": [
+        "T01"
+      ],
+      "spec_sections": [
+        "2.1",
+        "2.2",
+        "3.2",
+        "5.2"
+      ],
+      "files": [
+        "src/background/doubao.ts",
+        "docs/doubao-web-verification.md"
+      ],
+      "deliverables": [
+        "最小后台诊断入口与两种 Origin 的对照记录",
+        "确定原生或受限兼容模式；记录当前有效查询字段"
+      ],
+      "acceptance": [
+        "使用自己正常登录的账号，launch 后发送原生两项 raw_text",
+        "原生 Origin 可用时无需改写；确需兼容时记录固定 Origin 依赖",
+        "无需作者会话、Cookie 导出或额外代理；两模式都失败则阻塞后续功能"
+      ],
+      "verification": [
+        "真实 Chrome/Edge 请求的状态、Content-Type、SSE 索引与结果核验"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-04",
+        "AC-09"
+      ],
+      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+    },
+    {
+      "id": "T03",
+      "phase": "P0",
+      "title": "确定语言、长度与平台边界",
+      "status": "pending",
+      "depends_on": [
+        "T02"
+      ],
+      "spec_sections": [
+        "2.2",
+        "3.2",
+        "5.3"
+      ],
+      "files": [
+        "docs/doubao-web-verification.md",
+        "tests/fixtures/doubao/"
+      ],
+      "deliverables": [
+        "8 种目标语言和浏览器能力矩阵",
+        "合成或脱敏 SSE 夹具、已确认错误码表"
+      ],
+      "acceptance": [
+        "覆盖 1/2/10 项与 2000 code unit 边界；不把参考 200k 配置当作服务额度",
+        "Chrome/Edge 覆盖登录退出、Cookie 阻止、扩展重载、后台休眠后恢复",
+        "Firefox 单独给出通过或不支持结论；不影响其他 provider"
+      ],
+      "verification": [
+        "P0 人工矩阵；只有可用性证据齐全才能将 P0 标为 completed"
+      ],
+      "prd_acceptance": [
+        "AC-03",
+        "AC-04",
+        "AC-09"
+      ],
+      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+    },
+    {
+      "id": "T04",
+      "phase": "P1",
+      "title": "实现纯 SSE 解析与索引聚合",
+      "status": "completed",
+      "depends_on": [
+        "T03"
+      ],
+      "spec_sections": [
+        "2.3"
+      ],
+      "files": [
+        "src/background/doubao-sse.ts",
+        "tests/doubao-sse.test.ts",
+        "tests/fixtures/doubao/"
+      ],
+      "deliverables": [
+        "不依赖浏览器账号的流式解析器"
+      ],
+      "acceptance": [
+        "处理跨块 UTF-8、CRLF、多 data 行、注释、json/err/done",
+        "乱序回填；相同重复忽略，冲突重复或越界失败；无 done 的正常 EOF 可在完整时成功",
+        "缺项可识别；不使用 OpenAI [DONE] 或 token 拼接；响应不超 1 MB"
+      ],
+      "verification": [
+        "合成流单元测试：完整、半帧、异常断流、重复、缺项、错误码、大小限制"
+      ],
+      "prd_acceptance": [
+        "AC-04"
+      ],
+      "implementation_depends_on": [],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/background/doubao-sse.ts",
+        "tests/doubao-sse.test.ts",
+        "tests/fixtures/doubao/"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T05",
+      "phase": "P1",
+      "title": "实现会话初始化与按需 Origin 兼容",
+      "status": "completed",
+      "depends_on": [
+        "T03"
+      ],
+      "spec_sections": [
+        "2.2",
+        "5.2"
+      ],
+      "files": [
+        "src/background/doubao.ts",
+        "src/background/doubao-compatibility.ts",
+        "tests/doubao-compatibility.test.ts"
+      ],
+      "deliverables": [
+        "模块级共享初始化、设备标识与固定 endpoint 传输",
+        "仅 P0 证明必要时启用的 DNR 兼容层"
+      ],
+      "acceptance": [
+        "后台 credentials include；固定两个 HTTPS endpoint，禁止重定向，不接收任意 URL/Origin",
+        "初始化单飞；launch 失败明确传播，成功不能直接标记 ready",
+        "DNR 限定自身 initiator、精确 endpoint、POST/XHR；独立规则范围，最后使用者释放",
+        "启动只清自己的遗留规则，Ollama 规则和普通豆包网页请求不受影响"
+      ],
+      "verification": [
+        "并发初始化、规则命中边界、安装失败、引用计数和遗留清理单元测试"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-08",
+        "AC-09"
+      ],
+      "implementation_depends_on": [],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/background/doubao.ts",
+        "src/background/doubao-compatibility.ts",
+        "tests/doubao-compatibility.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T06",
+      "phase": "P1",
+      "title": "实现共享排队、预算与超长项重组",
+      "status": "completed",
+      "depends_on": [
+        "T04",
+        "T05"
+      ],
+      "spec_sections": [
+        "5.3"
+      ],
+      "files": [
+        "src/background/doubao.ts",
+        "tests/doubao-queue.test.ts",
+        "tests/doubao-segmentation.test.ts"
+      ],
+      "deliverables": [
+        "全部豆包入口共用的串行网络队列",
+        "无截断的分片与索引重组"
+      ],
+      "acceptance": [
+        "网络并发 1、开始间隔至少 1000ms、每请求最多 10 项/2000 code unit",
+        "保留保护标记、代理对、原索引与边界空白；纯保护符/空白片段本地保留；拆分后原文可精确重组",
+        "请求首响应25s/闲置20s/总60s，读取响应体期间仍有效",
+        "一个逻辑调用最多一次额外网络尝试；缺项补发与瞬断重试共享预算；鉴权/403/429/协议/超时不自动重试",
+        "支持父级110s绝对deadline；超时移除等待项、中止流并释放资源"
+      ],
+      "verification": [
+        "假时钟与合成流验证超时/间隔/等待者释放；多入口与长段边界测试"
+      ],
+      "prd_acceptance": [
+        "AC-04",
+        "AC-06",
+        "AC-08"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/background/doubao.ts",
+        "tests/doubao-queue.test.ts",
+        "tests/doubao-segmentation.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T07",
+      "phase": "P1",
+      "title": "注册豆包 provider 并统一错误分类",
+      "status": "completed",
+      "depends_on": [
+        "T04",
+        "T05",
+        "T06"
+      ],
+      "spec_sections": [
+        "5.1",
+        "5.4"
+      ],
+      "files": [
+        "src/shared/types.ts",
+        "src/background/providers.ts",
+        "src/background/doubao.ts",
+        "tests/doubao-provider.test.ts"
+      ],
+      "deliverables": [
+        "DoubaoWebConfig 与独立 factory 分支",
+        "带稳定错误码的 provider"
+      ],
+      "acceptance": [
+        "translate_service 固定字符串1；只走文章 SSE，返回等长同序字符串数组",
+        "空批次不联网；未知语言、损坏结果明确失败",
+        "登录、拒绝、限流、权限、网络、超时、协议错误可区分，403不一律等于登录失效",
+        "普通任务阻塞时允许主动固定短文检测进入共享队列；冷却后不自动重放旧任务"
+      ],
+      "verification": [
+        "provider 契约测试、错误码与恢复状态转换测试"
+      ],
+      "prd_acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-08"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/shared/types.ts",
+        "src/background/providers.ts",
+        "src/background/doubao.ts",
+        "tests/doubao-provider.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T08",
+      "phase": "P2",
+      "title": "增加默认配置与旧设置迁移",
+      "status": "completed",
+      "depends_on": [
+        "T07"
+      ],
+      "spec_sections": [
+        "5.1"
+      ],
+      "files": [
+        "src/shared/defaults.ts",
+        "src/shared/settings.ts",
+        "src/shared/performance.ts",
+        "tests/settings.test.ts",
+        "tests/performance.test.ts"
+      ],
+      "deliverables": [
+        "一个可选的内置豆包服务"
+      ],
+      "acceptance": [
+        "新类型保存读取不丢失，旧设置自动补入豆包",
+        "保留原 activeProviderId、自定义服务、密钥和禁用状态",
+        "界面性能配置不能绕过豆包硬约束；isLlmProvider 不包含豆包"
+      ],
+      "verification": [
+        "旧版本配置、新安装、反复保存、禁用与服务切换测试"
+      ],
+      "prd_acceptance": [
+        "AC-01"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/shared/defaults.ts",
+        "src/shared/settings.ts",
+        "src/shared/performance.ts",
+        "tests/settings.test.ts",
+        "tests/performance.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T09",
+      "phase": "P2",
+      "title": "接入原生数组、有效请求、缓存和任务 deadline",
+      "status": "completed",
+      "depends_on": [
+        "T07",
+        "T08"
+      ],
+      "spec_sections": [
+        "4",
+        "5.1",
+        "5.3",
+        "5.5"
+      ],
+      "files": [
+        "src/background/translation.ts",
+        "src/background/protected-translation.ts",
+        "tests/translation.test.ts",
+        "tests/protected-translation.test.ts"
+      ],
+      "deliverables": [
+        "统一链路中豆包专用的最小分支"
+      ],
+      "acceptance": [
+        "保护符处理后直接传 texts，不拼 WUPAGESEGMENT 或上下文提示",
+        "在读缓存前将豆包有效 sourceLang 归一化 auto，忽略的 context 不参与有效缓存身份；不改持久设置",
+        "缓存包含豆包协议版本和引擎；只有完整、保护符校验通过的结果写入",
+        "从 TRANSLATE_BATCH 起计110s，覆盖等待、初始化、分片、补发与保护修复；signal贯穿后台内部调用"
+      ],
+      "verification": [
+        "带 context 的原生数组、缓存版本失效、损坏保护符和整任务超时测试"
+      ],
+      "prd_acceptance": [
+        "AC-03",
+        "AC-04",
+        "AC-06",
+        "AC-08"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/background/translation.ts",
+        "src/background/protected-translation.ts",
+        "tests/translation.test.ts",
+        "tests/protected-translation.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T10",
+      "phase": "P2",
+      "title": "加入检测与结构化错误消息",
+      "status": "completed",
+      "depends_on": [
+        "T07",
+        "T09"
+      ],
+      "spec_sections": [
+        "5.4"
+      ],
+      "files": [
+        "src/background/index.ts",
+        "src/shared/types.ts",
+        "src/shared/messaging.ts",
+        "src/content/runtime.ts",
+        "src/content/page-translation.ts",
+        "tests/background-runtime.test.ts"
+      ],
+      "deliverables": [
+        "固定短文检测与最近状态",
+        "跨消息层保留 errorCode/retryAfterMs"
+      ],
+      "acceptance": [
+        "重新检测不读缓存、不用页面正文，仅真实固定短文成功才 ready",
+        "TEST_PROVIDER 与生产调用使用同一队列和110s预算",
+        "两个消息封装及页面状态保留错误码/冷却时间，其他服务原错误处理不回归",
+        "认证/拒绝/限流释放已排队普通任务，主动检测可恢复且不绕过冷却与速率限制"
+      ],
+      "verification": [
+        "设置、网页消息两条路径及阻塞后重新检测测试"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-08"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/background/index.ts",
+        "src/shared/types.ts",
+        "src/shared/messaging.ts",
+        "src/content/runtime.ts",
+        "src/content/page-translation.ts",
+        "tests/background-runtime.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T11",
+      "phase": "P2",
+      "title": "完成无密钥设置表单与来源致谢",
+      "status": "completed",
+      "depends_on": [
+        "T08",
+        "T10"
+      ],
+      "spec_sections": [
+        "5.1",
+        "5.4",
+        "7"
+      ],
+      "files": [
+        "src/options/index.ts",
+        "options.html",
+        "src/options/styles.css",
+        "tests/options-ui.test.ts"
+      ],
+      "deliverables": [
+        "豆包网页登录专用表单"
+      ],
+      "acceptance": [
+        "只有说明、打开豆包、重新检测和状态，无 API Key/Cookie/model/prompt/URL 表单",
+        "选择服务不自动打开网站或发送页面内容",
+        "检测重复点击合并，切换服务后忽略旧检测结果",
+        "显示源语言自动识别，不覆盖全局源语言；展示作者和原帖来源入口"
+      ],
+      "verification": [
+        "表单读取/保存、按钮动作、检测竞态和来源链接 UI 测试"
+      ],
+      "prd_acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-10"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/options/index.ts",
+        "options.html",
+        "src/options/styles.css",
+        "tests/options-ui.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T12",
+      "phase": "P2",
+      "title": "接入弹窗、悬浮球与 PDF 的状态提示",
+      "status": "completed",
+      "depends_on": [
+        "T09",
+        "T10",
+        "T11"
+      ],
+      "spec_sections": [
+        "4",
+        "5.4"
+      ],
+      "files": [
+        "src/popup/index.ts",
+        "src/content/floating.ts",
+        "src/content/page-translation.ts",
+        "src/pdf/index.ts",
+        "tests/popup-interaction.test.ts",
+        "tests/floating-interaction.test.ts"
+      ],
+      "deliverables": [
+        "现有选择器中的豆包选项与可操作错误"
+      ],
+      "acceptance": [
+        "沿用 settings.providers 生成菜单，所有入口源语言呈现自动识别",
+        "未支持目标语或平台明确禁用豆包，不静默切换语言或服务",
+        "登录与受限状态提示一致；保留已有原文和成功译文",
+        "停止操作只承诺前台停止调度/恢复原文/忽略迟到结果，后台按任务 deadline 收尾"
+      ],
+      "verification": [
+        "切换服务/显示模式、错误恢复、停止与迟到响应测试"
+      ],
+      "prd_acceptance": [
+        "AC-02",
+        "AC-03",
+        "AC-05",
+        "AC-08"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "src/popup/index.ts",
+        "src/content/floating.ts",
+        "src/content/page-translation.ts",
+        "src/pdf/index.ts",
+        "tests/popup-interaction.test.ts",
+        "tests/floating-interaction.test.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T13",
+      "phase": "P3",
+      "title": "验证网页原文、代码与显示保真",
+      "status": "in_progress",
+      "depends_on": [
+        "T12"
+      ],
+      "spec_sections": [
+        "5.5"
+      ],
+      "files": [
+        "tests/page-translation.test.ts",
+        "tests/content-dom.test.ts",
+        "tests/protected-translation.test.ts",
+        "scripts/test-page-translation.mjs",
+        "scripts/test-github-code-comments.mjs"
+      ],
+      "deliverables": [
+        "豆包专用合成响应下的网页回归证据"
+      ],
+      "acceptance": [
+        "三显示模式切换复用译文，恢复原文后节点值与受保护节点正确",
+        "正文段落ID一一对应；动态内容、重复文本和旧会话响应不串位",
+        "inline code/链接保护、代码注释与行号保持现有能力",
+        "保护符缺失/重复/改写走既有修复；失败不缓存，不直接插入服务返回HTML"
+      ],
+      "verification": [
+        "定向 Vitest；npm run test:page；npm run test:github-code"
+      ],
+      "prd_acceptance": [
+        "AC-04",
+        "AC-05",
+        "AC-06"
+      ],
+      "progress_note": "单元 / 集成回归已通过；真实浏览器与账号的效果 / 负载验收待测试包验证。"
+    },
+    {
+      "id": "T14",
+      "phase": "P3",
+      "title": "验证 PDF 公式、目录与排版",
+      "status": "in_progress",
+      "depends_on": [
+        "T12"
+      ],
+      "spec_sections": [
+        "4",
+        "5.3",
+        "5.5"
+      ],
+      "files": [
+        "tests/pdf-model.test.ts",
+        "tests/pdf-math.test.ts",
+        "tests/pdf-layout.test.ts",
+        "scripts/test-pdf-scope.mjs"
+      ],
+      "deliverables": [
+        "文本层 PDF 的豆包接入回归记录"
+      ],
+      "acceptance": [
+        "块顺序、公式保护ID、公式图像、目录点线和页码保持",
+        "切换语言/服务后旧结果不覆盖新会话；导出沿用既有版式",
+        "豆包110s任务上限先于现PDF120s等待上限结束，无超时后的后台继续发起子请求"
+      ],
+      "verification": [
+        "定向 PDF 测试；npm run test:pdf-scope；人工检查含公式与目录的文本层 PDF"
+      ],
+      "prd_acceptance": [
+        "AC-06",
+        "AC-07",
+        "AC-08"
+      ],
+      "progress_note": "单元 / 集成回归已通过；真实浏览器与账号的效果 / 负载验收待测试包验证。"
+    },
+    {
+      "id": "T15",
+      "phase": "P3",
+      "title": "验证本地 OCR 文字翻译",
+      "status": "in_progress",
+      "depends_on": [
+        "T12"
+      ],
+      "spec_sections": [
+        "4",
+        "5.5"
+      ],
+      "files": [
+        "tests/ocr-translation.test.ts",
+        "tests/image-translation.test.ts",
+        "src/background/image-translation.ts"
+      ],
+      "deliverables": [
+        "已有 OCR 路径使用豆包的回归记录"
+      ],
+      "acceptance": [
+        "只发送本地识别后的文字，不调用参考脚本的新图片上传接口",
+        "区域坐标、覆盖层、字体布局与原图切换保持现有能力",
+        "失败不保存空译文；源语言有效值和缓存身份与通用豆包路径一致"
+      ],
+      "verification": [
+        "定向 OCR/image 测试；npm run test:ocr"
+      ],
+      "prd_acceptance": [
+        "AC-07"
+      ],
+      "progress_note": "单元 / 集成回归已通过；真实浏览器与账号的效果 / 负载验收待测试包验证。"
+    },
+    {
+      "id": "T16",
+      "phase": "P3",
+      "title": "验证跨入口负载与故障收敛",
+      "status": "in_progress",
+      "depends_on": [
+        "T12"
+      ],
+      "spec_sections": [
+        "5.2",
+        "5.3",
+        "5.4"
+      ],
+      "files": [
+        "tests/doubao-queue.test.ts",
+        "tests/doubao-provider.test.ts",
+        "tests/translation-recovery.test.ts",
+        "docs/doubao-web-verification.md"
+      ],
+      "deliverables": [
+        "同时触发设置检测、网页、PDF与OCR的故障验证证据"
+      ],
+      "acceptance": [
+        "各入口总并发仍为1，重试与缺项补发不相乘",
+        "登录退出/403/429后普通队列释放，不自动重放；手动检测可按规则恢复",
+        "首响应后卡住、半帧、超过1MB、110s耗尽均结束并清理reader/规则/等待者",
+        "普通豆包网页和其他provider请求头不被改写"
+      ],
+      "verification": [
+        "假时钟/合成流/并发单元测试与少量人工受控请求"
+      ],
+      "prd_acceptance": [
+        "AC-08"
+      ],
+      "progress_note": "单元 / 集成回归已通过；真实浏览器与账号的效果 / 负载验收待测试包验证。"
+    },
+    {
+      "id": "T17",
+      "phase": "P4",
+      "title": "完成浏览器联调及现有服务回归",
+      "status": "pending",
+      "depends_on": [
+        "T13",
+        "T14",
+        "T15",
+        "T16"
+      ],
+      "spec_sections": [
+        "3.2",
+        "6"
+      ],
+      "files": [
+        "docs/doubao-web-verification.md",
+        "tests/browser-manifest.test.ts",
+        "build/manifest.ts",
+        "public/manifest.json"
+      ],
+      "deliverables": [
+        "Chrome/Edge通过记录；Firefox独立支持结论"
+      ],
+      "acceptance": [
+        "记录实际浏览器版本、正常profile登录/退出、Cookie阻止、后台休眠与扩展重载结果",
+        "Firefox未通过时只禁用豆包并说明原因，已有Firefox其他服务继续工作",
+        "Google、OpenAI/Ollama与本地翻译代表性路径无回归；不新增cookies/scripting权限"
+      ],
+      "verification": [
+        "真实浏览器冒烟；npm run test:firefox；Manifest测试"
+      ],
+      "prd_acceptance": [
+        "AC-09"
+      ],
+      "progress_note": "真实账号 / 浏览器联调留待维护者在 PR 和 CI 后打包验证；自动化部分另见验证记录。"
+    },
+    {
+      "id": "T18",
+      "phase": "P4",
+      "title": "完成公开致谢、操作与隐私说明",
+      "status": "completed",
+      "depends_on": [
+        "T13",
+        "T14",
+        "T15",
+        "T16"
+      ],
+      "spec_sections": [
+        "7",
+        "8"
+      ],
+      "files": [
+        "README.md",
+        "PRIVACY.md",
+        "docs/development.md",
+        "src/background/doubao.ts",
+        "src/background/doubao-sse.ts",
+        "src/background/doubao-compatibility.ts"
+      ],
+      "deliverables": [
+        "README致谢、操作说明、适配器文件头、实现说明与拟议PR说明"
+      ],
+      "acceptance": [
+        "保留 Haleclipse、https://github.com/Haleclipse 和 https://linux.do/t/topic/2910452/10",
+        "明确 Cometix 提供思路与协议参考，WuPage按自身架构独立适配；保留原项目版权",
+        "说明同浏览器登录、待译文字发送豆包、有限支持与错误恢复；不宣称免登录/无限免费",
+        "不把第三方依赖许可证扩大成Cometix整项目授权；直接复制代码前另核对许可"
+      ],
+      "verification": [
+        "人工逐处检查署名、两条来源链接、数据流与实测支持矩阵一致"
+      ],
+      "prd_acceptance": [
+        "AC-10"
+      ],
+      "implementation_depends_on": [
+        "T12"
+      ],
+      "evidence": [
+        "../doubao-web-verification.md",
+        "README.md",
+        "PRIVACY.md",
+        "docs/development.md",
+        "src/background/doubao.ts",
+        "src/background/doubao-sse.ts",
+        "src/background/doubao-compatibility.ts"
+      ],
+      "progress_note": "实验代码与对应无账号测试 / 文档检查完成；此状态不代表 P0 真实会话验收通过。"
+    },
+    {
+      "id": "T19",
+      "phase": "P4",
+      "title": "收尾检查并形成可评审变更",
+      "status": "in_progress",
+      "depends_on": [
+        "T17",
+        "T18"
+      ],
+      "spec_sections": [
+        "6",
+        "7"
+      ],
+      "files": [
+        "docs/doubao-web-verification.md",
+        "prd.md",
+        "spec.md",
+        "task.json"
+      ],
+      "deliverables": [
+        "验证摘要、已知限制与PR候选说明"
+      ],
+      "acceptance": [
+        "PRD验收项逐项有证据，未做事项保持pending/blocked而非completed",
+        "无凭据、未脱敏HAR或参考脚本整包进入提交；功能差异仅覆盖本计划",
+        "类型检查、单元测试、两个构建和受影响浏览器回归通过；保留明确失败说明"
+      ],
+      "verification": [
+        "npm run typecheck",
+        "npm test",
+        "npm run build",
+        "npm run build:firefox",
+        "按受影响入口复用 test:settings/test:floating/test:page/test:github-code/test:pdf-scope/test:ocr"
+      ],
+      "prd_acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
+      "implementation_depends_on": [
+        "T12",
+        "T18"
+      ],
+      "progress_note": "本地类型、61文件测试、双构建、脚本语法和独立代码审阅完成；PR与CI提交中；受影响真实浏览器测试未通过执行条件，已明确记录。"
+    }
+  ],
+  "verification_report": "../doubao-web-verification.md"
+}

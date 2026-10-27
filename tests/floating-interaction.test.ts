@@ -11,6 +11,7 @@ import { initFloatingBall, setParagraphMode } from "../src/content/floating";
 import { clearPageTranslation, getPageTranslationState, startPageTranslation } from "../src/content/page-translation";
 import { sendRuntimeRequest } from "../src/content/runtime";
 import { injectContentStyles } from "../src/content/styles";
+import { ProviderError } from "../src/shared/errors";
 
 describe("floating translation interactions", () => {
   let stored: ExtensionSettings;
@@ -361,6 +362,98 @@ describe("floating translation interactions", () => {
     expect(bottom).toBeLessThanOrEqual(131);
     expect(Number.parseFloat(menu.style.left)).toBeGreaterThanOrEqual(8);
     expect(Number.parseFloat(menu.style.left) + menu.offsetWidth).toBeLessThanOrEqual(312);
+  });
+
+  it("displays Doubao's automatic source without losing the saved language when changing services", async () => {
+    Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test/${path}` });
+    stored = { ...stored, activeProviderId: "doubao-web", sourceLang: "en", targetLang: "pt" };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    const source = query<HTMLSelectElement>("[data-role='source-lang']");
+    const target = query<HTMLSelectElement>("[data-role='target-lang']");
+    const provider = query<HTMLSelectElement>("[data-role='provider']");
+    expect(source.disabled).toBe(true);
+    expect(source.value).toBe("auto");
+    expect(query("[data-role='source-lang-value']").textContent).toContain("自动识别");
+    expect(target.value).toBe("pt");
+    expect(target.selectedOptions[0]?.disabled).toBe(true);
+    target.value = "ja";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(stored.targetLang).toBe("ja"));
+    expect(stored.sourceLang).toBe("en");
+    provider.value = "google-web-translate";
+    provider.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(source.disabled).toBe(false));
+    expect(stored.sourceLang).toBe("en");
+    expect(source.value).toBe("en");
+    expect(query("[data-role='source-lang-value']").textContent).toBe("English");
+    expect(translationRequests()).toHaveLength(0);
+  });
+
+  it("offers an explicit settings action after Doubao requires login", async () => {
+    Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test/${path}` });
+    stored.activeProviderId = "doubao-web";
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation((request) => request.type === "TRANSLATE_BATCH"
+      ? Promise.reject(new ProviderError("请登录豆包后重新检测。", "login-required")) : runtime(request));
+    query<HTMLButtonElement>("#wupage-floating-ball").click();
+    await vi.waitFor(() => expect(getPageTranslationState().errorCode).toBe("login-required"));
+    const recover = query<HTMLButtonElement>("[data-action='doubao-settings']");
+    expect(recover.hidden).toBe(false);
+    expect(recover.textContent).toContain("登录豆包");
+    expect(sendRuntimeRequest).not.toHaveBeenCalledWith({ type: "OPEN_OPTIONS_PAGE" });
+    recover.click();
+    expect(sendRuntimeRequest).toHaveBeenCalledWith({ type: "OPEN_OPTIONS_PAGE" });
+    expect(translationRequests()).toHaveLength(1);
+  });
+
+  it("shows rate-limit waiting and prevents repeated retries, including after restoring the page", async () => {
+    Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test/${path}` });
+    stored.activeProviderId = "doubao-web";
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation((request) => request.type === "TRANSLATE_BATCH"
+      ? Promise.reject(new ProviderError("豆包限流。", "rate-limited", 5000)) : runtime(request));
+    const ball = query<HTMLButtonElement>("#wupage-floating-ball");
+    ball.click();
+    await vi.waitFor(() => expect(getPageTranslationState().errorCode).toBe("rate-limited"));
+    const retry = query<HTMLButtonElement>("[data-action='retranslate']");
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent).toContain("等待");
+    expect(query("[data-role='translation-status']").textContent).toContain("秒后再试");
+    retry.click();
+    ball.click(); // Restoring the page is still allowed.
+    ball.click(); // Starting again waits for the same cooldown.
+    await Promise.resolve();
+    expect(translationRequests()).toHaveLength(1);
+  });
+
+  it("updates the cooldown after a paragraph error opens a previously hidden menu", async () => {
+    vi.useFakeTimers();
+    Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test/${path}` });
+    stored.activeProviderId = "doubao-web";
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    await setParagraphMode(true);
+    const menu = query<HTMLElement>("#wupage-floating-menu");
+    expect(menu.hidden).toBe(true);
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation((request) => request.type === "TRANSLATE_BATCH"
+      ? Promise.reject(new ProviderError("豆包请求受限。", "rate-limited", 2000)) : runtime(request));
+    query("main p").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(menu.hidden).toBe(false);
+    const retry = query<HTMLButtonElement>("[data-action='retranslate']");
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent).toContain("等待");
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(retry.disabled).toBe(false);
+    expect(retry.textContent).toBe("重试翻译");
+    vi.mocked(sendRuntimeRequest).mockImplementation(runtime);
+    retry.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(translationRequests()).toHaveLength(2);
+    expect(query(".wupage-translation").textContent).toBe("继续之前，请阅读此段内容。");
+    await setParagraphMode(false);
   });
 
   it("shows paragraph instructions inline without an extra confirmation", async () => {

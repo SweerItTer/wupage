@@ -11,6 +11,9 @@ export function getEffectiveProviderPerformance(
   providerId = settings.activeProviderId
 ): EffectiveProviderPerformance {
   const provider = settings.providers.find((entry) => entry.id === providerId);
+  if (provider?.type === "doubao-web") {
+    return { chunkSize: 1200, concurrency: 1, performanceMode: "custom" };
+  }
   if (provider?.type === "firefox-local") {
     return { chunkSize: 800, concurrency: 1, performanceMode: "custom" };
   }

@@ -6,6 +6,7 @@ import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
 import { isLikelyPdfUrl } from "../pdf/launch";
 import { localProviderNotice } from "../shared/local-notice";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, readSourceLanguage, syncDoubaoLanguageControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -46,9 +47,10 @@ async function init(): Promise<void> {
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
   provider.innerHTML = settings.providers
     .filter((entry) => entry.enabled !== false)
-    .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`)
+    .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包网页登录翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   provider.value = settings.activeProviderId;
+  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
   updateLocalNotice();
   translationDisplayMode.innerHTML = TRANSLATION_DISPLAY_MODES
     .map((mode) => `<option value="${mode.value}">${mode.label}</option>`)
@@ -115,18 +117,19 @@ async function init(): Promise<void> {
 async function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
-    sourceLang: sourceLang.value || "auto",
+    sourceLang: readSourceLanguage(sourceLang, settings),
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value,
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
   };
+  syncDoubaoLanguageControls(settings, sourceLang, targetLang);
   await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
   updateLocalNotice();
 }
 
 function updateLocalNotice(): void {
   let notice = document.getElementById("localProviderNotice");
-  const message = localProviderNotice(settings);
+  const message = localProviderNotice(settings) ?? doubaoProviderNotice(settings);
   if (!notice && message) {
     notice = document.createElement("p"); notice.id = "localProviderNotice";
     notice.setAttribute("role", "status"); notice.style.cssText = "line-height:1.6;font-size:12px;padding:10px;border:1px solid #c7a557;border-radius:8px";

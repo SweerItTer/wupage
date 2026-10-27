@@ -47,6 +47,42 @@ section {
   gap: 14px;
 }
 
+.doubao-setup {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #c8d9d3;
+  border-radius: 8px;
+  background: #f7faf8;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.doubao-setup h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.doubao-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+[data-role="doubao-status"] {
+  padding: 10px;
+  border-radius: 6px;
+  background: #eaf0ed;
+}
+
+[data-role="doubao-status"][data-state="ready"] {
+  color: #176244;
+}
+
+select[data-doubao-automatic="true"] {
+  cursor: default;
+  opacity: .75;
+}
+
 label {
   display: grid;
   gap: 6px;

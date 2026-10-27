@@ -20,6 +20,7 @@ import { readPath, renderTemplate } from "./template";
 import { chatCompletionsEndpoint, usesOllamaCompatibility, withOllamaCompatibility } from "./ollama-compatibility";
 import { TranslationResponseError } from "./translation-response";
 import { translateLocally } from "./local";
+import { DoubaoProvider } from "./doubao";
 
 const GOOGLE_WEB_REQUEST_CONCURRENCY = 4;
 const WEB_TRANSLATION_TIMEOUT_MS = 20_000;
@@ -94,6 +95,7 @@ Estimate the original text color and the local background color behind the text.
 }
 
 export function createProvider(config: ProviderConfig): TranslatorProvider {
+  if (config.type === "doubao-web") return new DoubaoProvider(config);
   if (config.type === "firefox-local") return {
     id: config.id, label: config.label,
     validateConfig: () => ({ ok: true }),

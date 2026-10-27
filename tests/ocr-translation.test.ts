@@ -50,6 +50,21 @@ describe("local OCR image translation", () => {
     expect(recognizeImage).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(stored)).not.toContain("base64");
   });
+  it("reuses Doubao image results across saved source preferences while isolating other providers", async () => {
+    const doubao = { ...settings, activeProviderId: "doubao-web", sourceLang: "en" };
+    const first = await translateImageWithSettings(doubao, request);
+    const second = await translateImageWithSettings({ ...doubao, sourceLang: "ja" }, request);
+    expect(first.cached).toBe(false);
+    expect(second.cached).toBe(true);
+    expect(second.regions).toEqual(first.regions);
+    expect(recognizeImage).toHaveBeenCalledTimes(1);
+    expect(translateWithSettings).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(vi.mocked(translateWithSettings).mock.calls)).not.toContain("base64");
+
+    const google = await translateImageWithSettings({ ...doubao, activeProviderId: "google-web-translate" }, request);
+    expect(google.cached).toBe(false);
+    expect(recognizeImage).toHaveBeenCalledTimes(2);
+  });
   it("does not cover unchanged translations or send purely numeric labels", async () => {
     vi.mocked(translateWithSettings).mockResolvedValue({ translations: ["Cache performance"], cached: 0 });
     const result = await translateImageWithSettings(settings, request);

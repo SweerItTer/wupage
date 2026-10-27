@@ -7,9 +7,10 @@ vi.mock("../src/content/runtime", () => ({
   sendRuntimeRequest: vi.fn()
 }));
 
-import { clearPageTranslation, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation } from "../src/content/page-translation";
+import { clearPageTranslation, getPageTranslationState, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation } from "../src/content/page-translation";
 import { sendRuntimeRequest } from "../src/content/runtime";
 import { collectParagraphTextSegments, renderTranslations } from "../src/content/dom";
+import { ProviderError } from "../src/shared/errors";
 
 const settings: ExtensionSettings = {
   targetLang: "zh-CN",
@@ -198,6 +199,87 @@ describe("viewport page translation", () => {
     finishOld({ translations: ["Cancelled response"], cached: 0 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.body.textContent).not.toContain("Cancelled response");
+  });
+
+  it("pauses the page queue on a login error and restores completed work when the user retries", async () => {
+    const texts = ["First source paragraph. ", "Second source paragraph. ", "Third source paragraph. "]
+      .map((text) => text.repeat(40).trim());
+    document.body.innerHTML = `<main>${texts.map((text, index) => `<p id="p${index}" data-top="${100 + index * 100}">${text}</p>`).join("")}</main>`;
+    const options: ExtensionSettings = {
+      ...settings,
+      activeProviderId: "doubao-web",
+      translationDisplayMode: "replace",
+      providers: [{ id: "doubao-web", type: "doubao-web", label: "豆包" }]
+    };
+    translateNormally();
+    const translate = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest)
+      .mockImplementationOnce(translate)
+      .mockRejectedValueOnce(new ProviderError("请登录豆包后重新检测。", "login-required"));
+
+    const failed = await startPageTranslation(options);
+    expect(failed).toMatchObject({ translated: 1, failed: 1, remaining: 1, errorCode: "login-required" });
+    expect(failed.retryAt).toBeUndefined();
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, errorCode: "login-required" });
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("#p1")!.textContent).toBe(texts[1]);
+    expect(document.querySelector("#p2")!.textContent).toBe(texts[2]);
+    expect(document.querySelector(".wupage-translation-pending")).toBeNull();
+
+    const addedText = "New source paragraph. ".repeat(40).trim();
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", `<p data-top="400">${addedText}</p>`);
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, remaining: 2 });
+
+    hidePageTranslation();
+    expect(document.querySelector(".wupage-translation")).toBeNull();
+    expect(Array.from(document.querySelectorAll("main p"), (paragraph) => paragraph.textContent)).toEqual([...texts, addedText]);
+    expect(getPageTranslationState().active).toBe(false);
+    vi.mocked(sendRuntimeRequest).mockClear();
+    translateNormally(); // The explicit login/check recovery is handled by the background provider.
+    const recovered = await startPageTranslation(options);
+    expect(recovered).toMatchObject({ translated: 4, cached: 1, failed: 0, remaining: 0 });
+    expect(recovered.errorCode).toBeUndefined();
+    expect(recovered.retryAt).toBeUndefined();
+    const requested = vi.mocked(sendRuntimeRequest).mock.calls.flatMap(([request]) => request.type === "TRANSLATE_BATCH" ? request.texts : []);
+    expect(requested).toEqual([texts[1], texts[2], addedText]);
+    expect(document.querySelectorAll(".wupage-translation:not(.wupage-translation-pending)")).toHaveLength(4);
+  });
+
+  it("returns the rate-limit deadline, preserves originals, and requires an explicit retry after cooldown", async () => {
+    const texts = ["First source paragraph. ", "Second source paragraph. ", "Third source paragraph. "]
+      .map((text) => text.repeat(40).trim());
+    document.body.innerHTML = `<main>${texts.map((text, index) => `<p data-top="${100 + index * 100}">${text}</p>`).join("")}</main>`;
+    const options: ExtensionSettings = {
+      ...settings,
+      activeProviderId: "doubao-web",
+      translationDisplayMode: "replace",
+      providers: [{ id: "doubao-web", type: "doubao-web", label: "豆包" }]
+    };
+    const startedAt = 1_700_000_000_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(startedAt);
+    vi.mocked(sendRuntimeRequest).mockRejectedValue(new ProviderError("豆包请求受限。", "rate-limited", 5000));
+    const failed = await startPageTranslation(options);
+    expect(failed).toMatchObject({ translated: 0, failed: 1, remaining: 2, errorCode: "rate-limited", retryAt: startedAt + 5000 });
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, errorCode: "rate-limited", retryAt: startedAt + 5000 });
+    expect(Array.from(document.querySelectorAll("main p"), (paragraph) => paragraph.textContent)).toEqual(texts);
+    expect(document.querySelector(".wupage-translation")).toBeNull();
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+
+    clock.mockReturnValue(startedAt + 6000);
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+    translateNormally();
+    const recovered = await startPageTranslation(options, false);
+    expect(recovered).toMatchObject({ translated: 3, failed: 0, remaining: 0 });
+    expect(recovered.errorCode).toBeUndefined();
+    expect(recovered.retryAt).toBeUndefined();
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, failed: 0, translated: 3 });
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(4);
+    expect(document.querySelectorAll(".wupage-translation:not(.wupage-translation-pending)")).toHaveLength(3);
   });
 
   it("requests placeholder validation for rich text before replacing its source", async () => {

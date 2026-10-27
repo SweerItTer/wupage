@@ -1,4 +1,5 @@
 export type ProviderType =
+  | "doubao-web"
   | "firefox-local"
   | "google-web-translate"
   | "microsoft-translator"
@@ -22,6 +23,21 @@ export interface ProviderBaseConfig {
 
 export interface GoogleWebTranslateConfig extends ProviderBaseConfig {
   type: "google-web-translate";
+}
+
+export interface DoubaoWebConfig extends ProviderBaseConfig {
+  type: "doubao-web";
+}
+
+export type DoubaoStatusState = "unknown" | "checking" | "ready" | "login-required"
+  | "rate-limited" | "service-rejected" | "permission-required" | "network-error"
+  | "timeout" | "protocol-changed" | "incomplete" | "unsupported-browser" | "unsupported-language";
+
+export interface DoubaoStatus {
+  state: DoubaoStatusState;
+  checkedAt?: number;
+  message?: string;
+  retryAt?: number;
 }
 
 export interface FirefoxLocalConfig extends ProviderBaseConfig {
@@ -84,6 +100,7 @@ export interface HttpTemplateConfig extends ProviderBaseConfig {
 }
 
 export type ProviderConfig =
+  | DoubaoWebConfig
   | FirefoxLocalConfig
   | GoogleWebTranslateConfig
   | MicrosoftTranslatorConfig
@@ -193,6 +210,8 @@ export interface TranslatorProvider {
 }
 
 export type RuntimeRequest =
+  | { type: "GET_DOUBAO_STATUS" }
+  | { type: "CHECK_DOUBAO" }
   | { type: "GET_LOCAL_MODEL_STATUS" }
   | { type: "INSTALL_LOCAL_MODEL"; modelId: string }
   | { type: "CANCEL_LOCAL_MODEL_DOWNLOAD" }
@@ -221,4 +240,4 @@ export type RuntimeRequest =
 
 export type RuntimeResponse =
   | { ok: true; data?: unknown }
-  | { ok: false; error: string };
+  | { ok: false; error: string; errorCode?: string; retryAfterMs?: number };

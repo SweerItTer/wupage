@@ -1,4 +1,5 @@
 import type { RuntimeRequest, RuntimeResponse } from "../shared/types";
+import { restoreRuntimeError } from "../shared/errors";
 
 export function hasRuntimeContext(): boolean {
   return Boolean(chrome?.runtime?.id);
@@ -23,7 +24,7 @@ export async function sendRuntimeRequest<T>(request: RuntimeRequest): Promise<T>
   try {
     const response = (await chrome.runtime.sendMessage(request)) as RuntimeResponse | undefined;
     if (!response) throw new Error("No response from extension runtime.");
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) throw restoreRuntimeError(response);
     return response.data as T;
   } catch (error) {
     if (!hasRuntimeContext() || isContextInvalidatedError(error)) {
