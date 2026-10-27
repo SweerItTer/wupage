@@ -10,6 +10,8 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from "../shared/languages";
 import { sendRuntimeMessage } from "../shared/messaging";
+import { ProviderError } from "../shared/errors";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 import type {
   ExtensionSettings,
   RuntimeRequest,
@@ -86,6 +88,7 @@ interface PdfTranslationSession {
   translated: number;
   cached: number;
   failedPages: number;
+  pauseError?: ProviderError;
 }
 
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -134,6 +137,7 @@ async function init(): Promise<void> {
   renderLanguageOptions(sourceLang, settings.sourceLang, SOURCE_LANGUAGES);
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
   renderProviders();
+  updateDoubaoControls();
   updateTranslationScopeControl();
   bindEvents();
 
@@ -838,7 +842,7 @@ function scheduleReadingTranslation(): void {
   session.scrolling = true;
   window.clearTimeout(translationScrollTimer);
   translationScrollTimer = window.setTimeout(() => {
-    if (translationSession !== session) return;
+    if (translationSession !== session || !session.followReading) return;
     session.scrolling = false;
     session.readingPage = getReadingPageNumber();
     refreshTranslationRange(session);
@@ -867,7 +871,7 @@ function pumpTranslationQueue(session: PdfTranslationSession): void {
     session.busy = true;
     session.completed = session.translated = session.cached = session.failedPages = 0;
   }
-  while (session.pending.size && session.active.size < 2) {
+  while (!session.pauseError && session.pending.size && session.active.size < 2) {
     const page = takeNearestPage(session.pending, session.readingPage)!;
     session.active.add(page);
     renderTranslationSkeleton(page);
@@ -881,7 +885,11 @@ function pumpTranslationQueue(session: PdfTranslationSession): void {
     progressBar.style.width = `${Math.round(session.completed / total * 100)}%`;
     const label = session.radius === null ? "全文"
       : `第 ${session.scopePages[0].pageNumber}–${session.scopePages.at(-1)!.pageNumber} 页`;
-    showStatus(`正在翻译${label}：${session.completed} / ${total} 页…`, "info", true);
+    if (session.pauseError) {
+      showStatus(`翻译已暂停：${formatTranslationError(session.pauseError)} 正在等待已发出的 ${session.active.size} 页请求结束，随后可点击翻译按钮重试。`, "error", true);
+    } else {
+      showStatus(`正在翻译${label}：${session.completed} / ${total} 页…`, "info", true);
+    }
   } else if (session.busy) {
     finishTranslationBatch(session);
   }
@@ -912,6 +920,14 @@ async function translatePage(session: PdfTranslationSession, page: PdfPageState)
     if (translationSession !== session) return;
     session.failed.add(page); // Retry explicitly, never repeatedly on scroll.
     session.failedPages += 1;
+    if (error instanceof ProviderError && ["login-required", "service-rejected", "rate-limited", "permission-required",
+      "unsupported-browser", "unsupported-language", "protocol-changed"].includes(error.errorCode)) {
+      session.pauseError ??= error;
+      session.pending.clear();
+      session.followReading = false;
+      session.scrolling = false;
+      window.clearTimeout(translationScrollTimer);
+    }
     renderPageError(page, error);
   } finally {
     if (translationSession === session) {
@@ -927,7 +943,9 @@ function finishTranslationBatch(session: PdfTranslationSession): void {
   translateButton.disabled = false;
   translateButton.classList.remove("is-loading");
   updateDownloadButtonState();
-  if (session.failedPages) {
+  if (session.pauseError) {
+    showStatus(`翻译已暂停：${formatTranslationError(session.pauseError)} 已完成 ${session.translated} 段，处理后可直接点击翻译按钮重试。`, "error", true);
+  } else if (session.failedPages) {
     showStatus(`翻译完成：${session.translated} 段成功，${session.failedPages} 页失败，可点击翻译按钮重试。`, "error");
   } else {
     const detail = session.radius === null || !session.followReading ? "" : "滚动后自动补译附近尚未翻译的页面。";
@@ -1035,6 +1053,9 @@ async function saveReaderSettings(): Promise<void> {
     targetLang: targetLang.value || "zh-CN",
     activeProviderId: provider.value || settings.activeProviderId
   };
+  // Update provider controls immediately while the latest stored settings are loading.
+  settings = { ...settings, ...readerSettings };
+  updateDoubaoControls();
   settings = {
     ...await loadSettings(),
     ...readerSettings
@@ -1056,9 +1077,36 @@ function renderProviders(): void {
     const option = document.createElement("option");
     option.value = item.id;
     option.textContent = item.label;
+    option.disabled = isDoubaoProviderUnavailable(item);
     provider.append(option);
   }
   provider.value = settings.activeProviderId;
+}
+
+function updateDoubaoControls(): void {
+  syncDoubaoTargetControls(settings, targetLang);
+  const message = doubaoProviderNotice(settings);
+  let notice = document.getElementById("doubaoProviderNotice");
+  if (!notice && message) {
+    notice = document.createElement("p");
+    notice.id = "doubaoProviderNotice";
+    notice.setAttribute("role", "status");
+    const description = document.createElement("span");
+    description.dataset.role = "doubao-description";
+    const settingsButton = document.createElement("button");
+    settingsButton.type = "button";
+    settingsButton.textContent = "登录与检测";
+    settingsButton.addEventListener("click", () => {
+      void sendRuntimeMessage({ type: "OPEN_OPTIONS_PAGE" }).catch((error: unknown) => showStatus(error instanceof Error ? error.message : String(error), "error"));
+    });
+    notice.append(description, settingsButton);
+    provider.closest("header")?.after(notice);
+  }
+  if (notice) {
+    notice.hidden = !message;
+    const description = notice.querySelector("[data-role='doubao-description']");
+    if (description) description.textContent = message ?? "";
+  }
 }
 
 function renderLanguageOptions(

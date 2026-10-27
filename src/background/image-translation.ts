@@ -7,6 +7,7 @@ import { installedRevision } from "../ocr/model-store";
 import { positionedLines } from "../ocr/regions";
 import { restoreTextFromAlternative } from "../ocr/text-lines";
 import { translateWithSettings } from "./translation";
+import { DOUBAO_PROTOCOL_VERSION } from "../shared/doubao";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const inFlight = new Map<string, Promise<TranslateImageResponse>>();
@@ -25,7 +26,9 @@ export async function translateImageWithSettings(settings: ExtensionSettings, re
   }
   const provider = settings.providers.find((entry) => entry.id === settings.activeProviderId && entry.enabled !== false);
   if (!provider) throw new Error("没有可用的翻译服务。");
-  const digest = await sha256(JSON.stringify({ version: 5, modelRevision, provider, target: settings.targetLang, source: settings.sourceLang, ...request }));
+  const digest = await sha256(JSON.stringify({ version: 5, modelRevision, provider, target: settings.targetLang,
+    source: settings.sourceLang,
+    ...(provider.type === "doubao-web" ? { doubaoProtocolVersion: DOUBAO_PROTOCOL_VERSION, translateService: "1" } : {}), ...request }));
   const key = `${CACHE_PREFIX}image.${digest}`;
   if (settings.cacheEnabled) {
     const stored = (await chrome.storage.local.get(key))[key];

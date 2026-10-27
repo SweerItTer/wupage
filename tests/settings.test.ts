@@ -74,6 +74,7 @@ describe("normalizeSettings", () => {
       });
     expect(settings.providers.map((provider) => provider.id)).toEqual([
       "google-web-translate",
+      "doubao-web",
       "microsoft-translator",
       "google-cloud-translation",
       "openai-compatible",

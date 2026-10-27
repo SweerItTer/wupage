@@ -6,6 +6,7 @@ import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
 import { isLikelyPdfUrl } from "../pdf/launch";
 import { localProviderNotice } from "../shared/local-notice";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -25,6 +26,7 @@ const GITHUB_URL = "https://github.com/mr-wuliu/wupage";
 const WEBSITE_URL = "https://wupage.mrwuliu.top/";
 
 let settings: ExtensionSettings;
+let settingsSave: Promise<void> = Promise.resolve();
 let paragraphMode = false;
 let paragraphModeAvailable = true;
 let pageTranslated = false;
@@ -46,9 +48,10 @@ async function init(): Promise<void> {
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
   provider.innerHTML = settings.providers
     .filter((entry) => entry.enabled !== false)
-    .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`)
+    .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   provider.value = settings.activeProviderId;
+  syncDoubaoTargetControls(settings, targetLang);
   updateLocalNotice();
   translationDisplayMode.innerHTML = TRANSLATION_DISPLAY_MODES
     .map((mode) => `<option value="${mode.value}">${mode.label}</option>`)
@@ -79,10 +82,10 @@ async function init(): Promise<void> {
   }
   updatePageActionAvailability();
 
-  targetLang.addEventListener("change", savePopupSettings);
-  sourceLang.addEventListener("change", savePopupSettings);
-  provider.addEventListener("change", savePopupSettings);
-  translationDisplayMode.addEventListener("change", savePopupSettings);
+  targetLang.addEventListener("change", saveSettingsFromControl);
+  sourceLang.addEventListener("change", saveSettingsFromControl);
+  provider.addEventListener("change", saveSettingsFromControl);
+  translationDisplayMode.addEventListener("change", saveSettingsFromControl);
   pageToggleButton.addEventListener("click", togglePageTranslation);
   paragraphModeButton.addEventListener("click", toggleParagraphMode);
   floatingBallButton.addEventListener("click", toggleFloatingBall);
@@ -112,7 +115,13 @@ async function init(): Promise<void> {
   });
 }
 
-async function savePopupSettings(): Promise<void> {
+function saveSettingsFromControl(): void {
+  void savePopupSettings().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : String(error));
+  });
+}
+
+function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
     sourceLang: sourceLang.value || "auto",
@@ -120,13 +129,19 @@ async function savePopupSettings(): Promise<void> {
     activeProviderId: provider.value,
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
   };
-  await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
-  updateLocalNotice();
+  syncDoubaoTargetControls(settings, targetLang);
+  const snapshot = structuredClone(settings);
+  const save = settingsSave.catch(() => undefined).then(async () => {
+    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings: snapshot });
+    updateLocalNotice();
+  });
+  settingsSave = save;
+  return save;
 }
 
 function updateLocalNotice(): void {
   let notice = document.getElementById("localProviderNotice");
-  const message = localProviderNotice(settings);
+  const message = localProviderNotice(settings) ?? doubaoProviderNotice(settings);
   if (!notice && message) {
     notice = document.createElement("p"); notice.id = "localProviderNotice";
     notice.setAttribute("role", "status"); notice.style.cssText = "line-height:1.6;font-size:12px;padding:10px;border:1px solid #c7a557;border-radius:8px";
@@ -334,7 +349,7 @@ async function toggleFloatingBall(): Promise<void> {
       ...settings,
       floatingBallEnabled
     };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await savePopupSettings();
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (pageTranslationAvailable && !activeTabIsPdf && tab.id) {
       await sendTabMessage<{ enabled: boolean }>(tab.id, {

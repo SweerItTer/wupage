@@ -15,6 +15,7 @@ import type { TextSegment } from "./dom";
 import { sendRuntimeRequest } from "./runtime";
 import { buildTranslationContext } from "./translation-context";
 import { getEffectiveProviderPerformance, isLlmProvider } from "../shared/performance";
+import { ProviderError } from "../shared/errors";
 
 const VIEWPORT_MARGIN_RATIO = 0.75;
 const MIN_VIEWPORT_MARGIN = 240;
@@ -52,6 +53,9 @@ interface TranslationSession {
   cached: number;
   failed: number;
   firstError?: string;
+  firstErrorCode?: string;
+  retryAt?: number;
+  providerPaused?: boolean;
   initialPending: Set<string>;
   initialResolved: boolean;
   resolveInitial: (result: PageTranslationResult) => void;
@@ -66,6 +70,8 @@ export interface PageTranslationResult {
   cached: number;
   failed: number;
   error?: string;
+  errorCode?: string;
+  retryAt?: number;
   remaining: number;
 }
 
@@ -79,6 +85,8 @@ let activeSession: TranslationSession | null = null;
 let suspendedSession: TranslationSession | null = null;
 let viewportTimer: number | undefined;
 let currentDisplayMode: TranslationDisplayMode | undefined;
+let settingsRevision = 0;
+let latestSettings: ExtensionSettings | undefined;
 const stateListeners = new Set<() => void>();
 
 export function getPageTranslationState(): PageTranslationState {
@@ -99,6 +107,31 @@ export function subscribePageTranslationState(listener: () => void): () => void 
 
 function notifyTranslationState(): void {
   stateListeners.forEach((listener) => listener());
+}
+
+export async function loadPageTranslationSettings(): Promise<ExtensionSettings> {
+  const revision = settingsRevision;
+  const settings = await sendRuntimeRequest<ExtensionSettings>({ type: "GET_SETTINGS" });
+  // A language change can arrive while the initial settings read is pending,
+  // before there is an active session for the storage listener to restart.
+  return revision !== settingsRevision && latestSettings ? latestSettings : settings;
+}
+
+export function updatePageTranslationSettings(settings: ExtensionSettings): void {
+  settingsRevision += 1;
+  latestSettings = settings;
+  const session = activeSession;
+  if (session && (session.settings.sourceLang !== settings.sourceLang || session.settings.targetLang !== settings.targetLang)) {
+    // Start from the saved originals, cancelling the old generation before any
+    // late response can render. A hidden or never-started page stays inactive.
+    preserveViewportPosition(() => { void startPageTranslation(settings, false); },
+      [...session.entries.values()].map((entry) => entry.segment));
+    return;
+  }
+  const mode = settings.translationDisplayMode;
+  if (mode !== currentDisplayMode && (mode === "replace" || mode === "bilingual" || mode === "bilingual-accent")) {
+    setPageTranslationDisplayMode(mode);
+  }
 }
 
 export function startPageTranslation(settings: ExtensionSettings, reuseResults = true): Promise<PageTranslationResult> {
@@ -221,7 +254,7 @@ export function setPageTranslationDisplayMode(mode: TranslationDisplayMode): voi
 }
 
 function scheduleNearbySegments(session: TranslationSession, initial = false): void {
-  if (!isActive(session)) return;
+  if (!isActive(session) || session.providerPaused) return;
 
   const nearby = [...session.entries.values()]
     .filter((entry) => entry.status === "idle" || entry.status === "queued")
@@ -255,7 +288,7 @@ function scheduleNearbySegments(session: TranslationSession, initial = false): v
 }
 
 function pumpQueue(session: TranslationSession): void {
-  if (!isActive(session)) return;
+  if (!isActive(session) || session.providerPaused) return;
   while (session.activeCount < session.maxConcurrency && session.queue.length) {
     const batch = session.queue.shift();
     if (!batch) break;
@@ -312,6 +345,20 @@ async function runBatch(session: TranslationSession, segments: TextSegment[]): P
     preserveViewportPosition(() => clearTranslationPlaceholders(segments), segments);
     session.failed += segments.length;
     session.firstError ??= error instanceof Error ? error.message : String(error);
+    if (error instanceof ProviderError) {
+      session.firstErrorCode ??= error.errorCode;
+      if (error.retryAfterMs !== undefined) session.retryAt = Date.now() + error.retryAfterMs;
+      if (["login-required", "rate-limited", "service-rejected", "permission-required",
+        "unsupported-browser", "unsupported-language", "protocol-changed"].includes(error.errorCode)) {
+        session.providerPaused = true;
+        session.queue = [];
+        for (const entry of session.entries.values()) {
+          if (entry.status !== "queued") continue;
+          entry.status = "idle";
+          settleInitialSegment(session, entry.segment.id);
+        }
+      }
+    }
     segments.forEach((segment) => {
       const entry = session.entries.get(segment.id);
       if (entry) entry.status = "failed";
@@ -322,6 +369,7 @@ async function runBatch(session: TranslationSession, segments: TextSegment[]): P
     if (isActive(session)) {
       scheduleNearbySegments(session);
       resolveInitialIfReady(session);
+      if (session.providerPaused) notifyTranslationState();
     }
   }
 }
@@ -532,6 +580,8 @@ function getResult(session: TranslationSession): PageTranslationResult {
     cached: session.cached,
     failed: session.failed,
     error: session.firstError,
+    ...(session.firstErrorCode ? { errorCode: session.firstErrorCode } : {}),
+    ...(session.retryAt === undefined ? {} : { retryAt: session.retryAt }),
     remaining: [...session.entries.values()].filter((entry) => entry.status === "idle").length
   };
 }

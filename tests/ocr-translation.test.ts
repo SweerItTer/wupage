@@ -50,6 +50,23 @@ describe("local OCR image translation", () => {
     expect(recognizeImage).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(stored)).not.toContain("base64");
   });
+  it("separates Doubao image caches by source language and provider", async () => {
+    const doubao = { ...settings, activeProviderId: "doubao-web", sourceLang: "en" };
+    const first = await translateImageWithSettings(doubao, request);
+    const second = await translateImageWithSettings({ ...doubao, sourceLang: "ja" }, request);
+    expect(first.cached).toBe(false);
+    expect(second.cached).toBe(false);
+    expect(second.regions).toEqual(first.regions);
+    expect(recognizeImage).toHaveBeenCalledTimes(2);
+    expect(translateWithSettings).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(translateWithSettings).mock.calls.map(([, textRequest]) => textRequest.sourceLang)).toEqual(["en", "ja"]);
+    expect((await translateImageWithSettings(doubao, request)).cached).toBe(true);
+    expect(JSON.stringify(vi.mocked(translateWithSettings).mock.calls)).not.toContain("base64");
+
+    const google = await translateImageWithSettings({ ...doubao, activeProviderId: "google-web-translate" }, request);
+    expect(google.cached).toBe(false);
+    expect(recognizeImage).toHaveBeenCalledTimes(3);
+  });
   it("does not cover unchanged translations or send purely numeric labels", async () => {
     vi.mocked(translateWithSettings).mockResolvedValue({ translations: ["Cache performance"], cached: 0 });
     const result = await translateImageWithSettings(settings, request);

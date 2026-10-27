@@ -2,10 +2,12 @@ import { BUILT_IN_PROVIDER_IDS, DEFAULT_SETTINGS } from "../shared/defaults";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from "../shared/languages";
 import { TRANSLATION_DISPLAY_MODES } from "../shared/display-modes";
 import { sendRuntimeMessage } from "../shared/messaging";
-import type { ExtensionSettings, ProviderConfig } from "../shared/types";
+import type { DoubaoStatus, ExtensionSettings, ProviderConfig } from "../shared/types";
 import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
 import { setupLocalModelControl } from "../local/control";
+import { isDoubaoBrowserSupported } from "../shared/doubao";
+import { formatDoubaoStatus, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -59,6 +61,17 @@ const DEFAULT_LLM_PROMPT =
 
 let settings: ExtensionSettings;
 let disposeLocalControl: (() => void) | undefined;
+let providerFormVersion = 0;
+let doubaoStatus: DoubaoStatus = { state: "unknown" };
+let doubaoCheck: Promise<void> | undefined;
+let doubaoStatusRevision = 0;
+let doubaoRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let optionsClosed = false;
+
+window.addEventListener("pagehide", () => {
+  optionsClosed = true;
+  clearTimeout(doubaoRetryTimer);
+}, { once: true });
 
 void init().catch((error: unknown) => {
   setStatus(error instanceof Error ? error.message : String(error));
@@ -164,6 +177,7 @@ function renderProviderPicker(keepOpen: boolean): void {
 
 function renderProviderMenuRow(provider: ProviderConfig): string {
   const enabled = provider.enabled !== false;
+  const unavailable = isDoubaoProviderUnavailable(provider);
   const builtIn = BUILT_IN_PROVIDER_IDS.has(provider.id);
   return `
     <div class="provider-menu-row" data-built-in="${builtIn}" role="group">
@@ -174,7 +188,8 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
         data-action="select"
         data-provider-id="${escapeAttr(provider.id)}"
         aria-selected="${provider.id === settings.activeProviderId}"
-        ${enabled ? "" : "disabled"}
+        ${enabled && !unavailable ? "" : "disabled"}
+        ${unavailable ? 'title="此浏览器暂不支持豆包翻译"' : ""}
       >
         <span class="provider-option-label">${escapeHtml(provider.label)}</span>
       </button>
@@ -202,8 +217,44 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
 }
 
 function renderProviderForm(): void {
+  const version = ++providerFormVersion;
+  clearTimeout(doubaoRetryTimer);
   disposeLocalControl?.(); disposeLocalControl = undefined;
   const provider = getActiveProvider();
+  syncDoubaoTargetControls(settings, targetLang);
+  testButton.textContent = provider.type === "doubao-web" ? "重新检测豆包" : "测试服务";
+  testButton.disabled = false;
+  if (provider.type === "doubao-web") {
+    providerForm.innerHTML = `
+      <div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div>
+      <div class="doubao-setup">
+        <h3>豆包（实验性）</h3>
+        <p>无需 API Key。在当前浏览器打开豆包并登录，即可开始翻译。连接异常时可点击“重新检测”。</p>
+        <p>翻译会将待译文本发送到豆包；检测只发送固定短文本。</p>
+        <div class="doubao-actions">
+          <button type="button" data-action="open-doubao">打开豆包并登录</button>
+          <button type="button" data-action="check-doubao">重新检测</button>
+        </div>
+        <p data-role="doubao-status" role="status" aria-live="polite"></p>
+        <p class="hint">如提示登录失效，请重新登录后重试翻译，或点击重新检测；如遇限流，请等待。登录状态由浏览器管理，无需复制 Cookie。</p>
+        <p class="hint">实现思路与协议研究参考 <a href="https://github.com/Haleclipse" target="_blank" rel="noopener noreferrer">Haleclipse</a> 的 CometixTranslate，来源：<a href="https://linux.do/t/topic/2910452" target="_blank" rel="noopener noreferrer">Linux.do 原帖</a>。</p>
+      </div>`;
+    providerForm.querySelector<HTMLButtonElement>("[data-action='open-doubao']")?.addEventListener("click", () => {
+      void chrome.tabs.create({ url: "https://www.doubao.com/" }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error)));
+    });
+    providerForm.querySelector<HTMLButtonElement>("[data-action='check-doubao']")?.addEventListener("click", () => void checkDoubao());
+    if (!isDoubaoBrowserSupported()) doubaoStatus = { state: "unsupported-browser" };
+    renderDoubaoStatus();
+    if (isDoubaoBrowserSupported() && !doubaoCheck) {
+      const revision = doubaoStatusRevision;
+      void sendRuntimeMessage<DoubaoStatus>({ type: "GET_DOUBAO_STATUS" }).then((result) => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision || !result) return;
+        doubaoStatus = result;
+        renderDoubaoStatus();
+      }).catch(() => { /* Keep the actionable initial state if the background is restarting. */ });
+    }
+    return;
+  }
   if (provider.type === "firefox-local") {
     providerForm.innerHTML = `<div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div><div data-local-model-control></div>`;
     updateLocalControl();
@@ -321,6 +372,58 @@ function renderProviderForm(): void {
   `);
 }
 
+function renderDoubaoStatus(): void {
+  if (optionsClosed || getActiveProvider().type !== "doubao-web") return;
+  const statusElement = providerForm.querySelector<HTMLElement>("[data-role='doubao-status']");
+  const checkButton = providerForm.querySelector<HTMLButtonElement>("[data-action='check-doubao']");
+  const retryIn = Math.max(0, (doubaoStatus.retryAt ?? 0) - Date.now());
+  if (statusElement) {
+    statusElement.textContent = formatDoubaoStatus(doubaoStatus);
+    statusElement.dataset.state = doubaoStatus.state;
+  }
+  const disabled = Boolean(doubaoCheck) || doubaoStatus.state === "checking" || !isDoubaoBrowserSupported() || retryIn > 0;
+  if (checkButton) checkButton.disabled = disabled;
+  testButton.disabled = disabled;
+  clearTimeout(doubaoRetryTimer);
+  if (retryIn > 0) doubaoRetryTimer = setTimeout(renderDoubaoStatus, Math.min(retryIn + 10, 1000));
+  else if (doubaoStatus.state === "checking" && !doubaoCheck) {
+    const version = providerFormVersion;
+    const revision = doubaoStatusRevision;
+    doubaoRetryTimer = setTimeout(() => {
+      void sendRuntimeMessage<DoubaoStatus>({ type: "GET_DOUBAO_STATUS" }).then((result) => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision || !result) return;
+        doubaoStatus = result;
+        renderDoubaoStatus();
+      }).catch(() => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision) return;
+        doubaoStatus = { state: "network-error" };
+        renderDoubaoStatus();
+      });
+    }, 1000);
+  }
+}
+
+function checkDoubao(): Promise<void> {
+  if (doubaoCheck) return doubaoCheck;
+  if (!isDoubaoBrowserSupported()) {
+    doubaoStatus = { state: "unsupported-browser" };
+    renderDoubaoStatus();
+    return Promise.resolve();
+  }
+  if ((doubaoStatus.retryAt ?? 0) > Date.now()) return Promise.resolve();
+  doubaoStatusRevision += 1;
+  doubaoStatus = { state: "checking" };
+  doubaoCheck = sendRuntimeMessage<DoubaoStatus>({ type: "CHECK_DOUBAO" })
+    .then((result) => { doubaoStatus = result; })
+    .catch(() => { doubaoStatus = { state: "network-error", checkedAt: Date.now() }; })
+    .finally(() => {
+      doubaoCheck = undefined;
+      renderDoubaoStatus();
+    });
+  renderDoubaoStatus();
+  return doubaoCheck;
+}
+
 function updateLocalControl(): void {
   const container = providerForm.querySelector<HTMLElement>("[data-local-model-control]");
   if (!container) return;
@@ -380,7 +483,7 @@ async function handleProviderAction(action: string, providerId: string): Promise
 
 async function selectProvider(providerId: string): Promise<void> {
   const provider = settings.providers.find((entry) => entry.id === providerId);
-  if (!provider || provider.enabled === false) return;
+  if (!provider || provider.enabled === false || isDoubaoProviderUnavailable(provider)) return;
   settings = readSettingsFromForm();
   settings.activeProviderId = providerId;
   await persistSettings(false);
@@ -534,6 +637,10 @@ async function persistSettings(showSavedStatus: boolean): Promise<void> {
 }
 
 async function testProvider(): Promise<void> {
+  if (getActiveProvider().type === "doubao-web") {
+    await checkDoubao();
+    return;
+  }
   try {
     setStatus("测试中...");
     settings = readSettingsFromForm();
@@ -562,7 +669,9 @@ async function restoreDefaults(): Promise<void> {
 function readSettingsFromForm(): ExtensionSettings {
   const activeProvider = {
     ...readProviderFromForm(getActiveProvider()),
-    ...(getActiveProvider().type === "firefox-local" ? { performanceMode: "custom", chunkSize: 800, concurrency: 1 } : readProviderPerformance())
+    ...(getActiveProvider().type === "firefox-local" ? { performanceMode: "custom", chunkSize: 800, concurrency: 1 }
+      : getActiveProvider().type === "doubao-web" ? { performanceMode: "custom", chunkSize: 1200, concurrency: 1 }
+        : readProviderPerformance())
   } as ProviderConfig;
   return {
     ...settings,
@@ -611,7 +720,7 @@ function readProviderFromForm(provider: ProviderConfig): ProviderConfig {
       `[data-field="${name}"]`
     )?.value ?? "";
 
-  if (provider.type === "google-web-translate" || provider.type === "firefox-local") {
+  if (provider.type === "google-web-translate" || provider.type === "firefox-local" || provider.type === "doubao-web") {
     return { ...provider, label: field("label").trim() || provider.label };
   }
   if (provider.type === "microsoft-translator") {

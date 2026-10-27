@@ -8,18 +8,19 @@ import { installedRevision } from "../ocr/model-store";
 import { initImageContextMenu } from "./image-context-menu";
 import { initializeOllamaCompatibility } from "./ollama-compatibility";
 import { requestLocal } from "./local";
+import { checkDoubao, getDoubaoStatus } from "./doubao";
+import { initializeDoubaoCompatibility } from "./doubao-compatibility";
+import { runtimeErrorResponse } from "../shared/errors";
 
 initImageContextMenu();
 void initializeOllamaCompatibility().catch((error: unknown) => console.warn("WuPage Ollama compatibility:", error));
+void initializeDoubaoCompatibility().catch((error: unknown) => console.warn("WuPage Doubao compatibility:", error));
 
 chrome.runtime.onMessage.addListener((request: RuntimeRequest, _sender, sendResponse) => {
   if ("target" in request) return;
   handleMessage(request)
     .then((data): RuntimeResponse => ({ ok: true, data }))
-    .catch((error: unknown): RuntimeResponse => ({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    }))
+    .catch(runtimeErrorResponse)
     .then(sendResponse);
 
   return true;
@@ -27,6 +28,15 @@ chrome.runtime.onMessage.addListener((request: RuntimeRequest, _sender, sendResp
 
 async function handleMessage(request: RuntimeRequest): Promise<unknown> {
   switch (request.type) {
+    case "GET_DOUBAO_STATUS":
+      return getDoubaoStatus();
+    case "CHECK_DOUBAO": {
+      const settings = await getSettings();
+      if (!settings.providers.some((entry) => entry.type === "doubao-web" && entry.enabled !== false)) {
+        throw new Error("请先启用豆包翻译服务。");
+      }
+      return checkDoubao();
+    }
     case "GET_LOCAL_MODEL_STATUS":
       return requestLocal("status");
     case "INSTALL_LOCAL_MODEL":

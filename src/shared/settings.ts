@@ -85,6 +85,18 @@ function normalizeProvider(
   globalChunkSize: number,
   globalConcurrency: number
 ): ProviderConfig {
+  if (provider.type === "doubao-web") {
+    return {
+      type: "doubao-web",
+      id: provider.id,
+      label: provider.id === "doubao-web" && provider.label === "豆包（网页登录，实验）"
+        ? "豆包（实验性）" : provider.label,
+      enabled: provider.enabled !== false,
+      performanceMode: "custom",
+      chunkSize: 1200,
+      concurrency: 1
+    };
+  }
   if (provider.type === "deepseek"
     && (provider.model === "deepseek-v4-flash" || provider.model === "deepseek-v4-flash-vision-exp")) {
     provider = { ...provider, model: "deepseek-flash" };
@@ -140,7 +152,7 @@ function isProviderConfig(value: unknown): value is ProviderConfig {
   ) return false;
   if (value.chunkSize !== undefined && typeof value.chunkSize !== "number") return false;
   if (value.concurrency !== undefined && typeof value.concurrency !== "number") return false;
-  if (value.type === "google-web-translate" || value.type === "firefox-local") {
+  if (value.type === "google-web-translate" || value.type === "firefox-local" || value.type === "doubao-web") {
     return ["id", "label"].every((key) => typeof value[key] === "string");
   }
 
