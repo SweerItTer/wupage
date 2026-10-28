@@ -10,10 +10,11 @@ vi.mock("../src/content/page-translation", () => ({
 vi.mock("../src/content/dom", () => ({ hasPageTranslations: hasTranslations }));
 vi.mock("../src/content/floating", () => ({
   initFloatingBall: vi.fn(), getFloatingBallEnabled: vi.fn(), getParagraphMode: vi.fn(),
-  openDebugPanel: vi.fn(), setFloatingBallEnabled: vi.fn(), setParagraphMode: vi.fn()
+  openDebugPanel: vi.fn(), setFloatingBallEnabled: vi.fn(), setParagraphMode: vi.fn(), refreshTranslationState: vi.fn()
 }));
 vi.mock("../src/content/image-translation", () => ({ initImageTranslation: vi.fn(), translateContextImage: vi.fn() }));
 vi.mock("../src/content/styles", () => ({ injectContentStyles: vi.fn() }));
+vi.mock("../src/content/paragraph-context", () => ({ initParagraphContextTranslation: vi.fn(() => vi.fn()) }));
 vi.mock("../src/shared/appearance-runtime", () => ({ setupAppearance: vi.fn(() => ({ update: vi.fn() })) }));
 vi.mock("../src/content/runtime", () => ({ addRuntimeMessageListener: vi.fn(), sendRuntimeRequest: vi.fn(async () => undefined) }));
 

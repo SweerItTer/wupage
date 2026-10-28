@@ -1,5 +1,6 @@
 import type { DictionaryProvider, SelectionTranslationSettings } from "./dictionary";
 import type { AppearanceSettings } from "./appearance";
+import type { ShortcutEnabledSettings, ShortcutSettings, TranslationShortcut } from "./shortcuts";
 
 export type ProviderType =
   | "firefox-local"
@@ -162,6 +163,8 @@ export type DualServiceProviderConfig = Extract<ProviderConfig, DualServiceConfi
 }>;
 
 export interface ExtensionSettings {
+  shortcuts?: ShortcutSettings;
+  shortcutEnabled?: ShortcutEnabledSettings;
   appearance?: AppearanceSettings;
   selectionTranslation?: SelectionTranslationSettings;
   autoTranslation?: AutoTranslationSettings;
@@ -174,6 +177,7 @@ export interface ExtensionSettings {
   pdfTranslationPageRadius: number | null;
   cacheEnabled: boolean;
   floatingBallEnabled: boolean;
+  contextMenuTranslationEnabled?: boolean;
   imageTranslationEnabled?: boolean;
   translateCodeComments: boolean;
   translationDisplayMode: TranslationDisplayMode;
@@ -192,6 +196,7 @@ export interface AutoTranslationSettings {
   presetSites: string[];
   customSites: AutoTranslationSite[];
   removedPresetSites?: string[];
+  excludedSites?: string[];
 }
 
 export interface TranslateBatchRequest {
@@ -277,6 +282,7 @@ export interface TranslatorProvider {
 }
 
 export type RuntimeRequest =
+  | { type: "EXECUTE_TRANSLATION_SHORTCUT"; command: TranslationShortcut }
   | { type: "LOOKUP_DICTIONARY"; query: string; provider: DictionaryProvider }
   | { type: "PLAY_DICTIONARY_AUDIO"; provider: DictionaryProvider; url: string }
   | { type: "STOP_DICTIONARY_AUDIO" }
@@ -299,6 +305,7 @@ export type RuntimeRequest =
   | { type: "CLEAR_CACHE" }
   | { type: "LOAD_IMAGE"; url: string }
   | { type: "TRANSLATE_CONTEXT_IMAGE"; srcUrl: string }
+  | { type: "TRANSLATE_CONTEXT_PARAGRAPH"; action: "translate" | "restore" }
   | ({ type: "TRANSLATE_IMAGE" } & TranslateImageRequest)
   | ({ type: "TRANSLATE_BATCH" } & TranslateBatchRequest)
   | { type: "GET_SETTINGS" }

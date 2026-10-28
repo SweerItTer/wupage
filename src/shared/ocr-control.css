@@ -2,7 +2,6 @@
 .image-feature[data-loading] .switch, .image-feature[data-loading] .setting-toggle-control { visibility: hidden; }
 .image-feature[data-loading] .switch, .image-feature[data-loading] .switch span,
 .image-feature[data-loading] .setting-toggle-control, .image-feature[data-loading] .setting-toggle-control::after { transition: none; }
-.general-toggles > .image-feature { grid-column: 1 / -1; }
 .setting-toggle:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .image-feature-row > .switch-row, .image-feature-row > .setting-toggle { flex: 1; min-width: 0; margin: 0; }
 .ocr-help { flex: 0 0 24px; display: flex; align-items: center; }

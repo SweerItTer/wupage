@@ -11,7 +11,6 @@
       <aside class="settings-sidebar">
         <header class="settings-header">
           <h1>WuPage 设置</h1>
-          <p>配置翻译服务和页面翻译行为。</p>
         </header>
         <nav class="settings-nav" aria-label="设置目录">
           <a href="#generalSettings" aria-controls="generalSettings" aria-current="page">
@@ -25,6 +24,10 @@
           <a href="#autoTranslationSettings" aria-controls="autoTranslationSettings">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3-9 11h7l-1 7 10-12h-8z"/></svg>
             <span>自动翻译</span>
+          </a>
+          <a href="#shortcutSettings" aria-controls="shortcutSettings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h1m3 0h1m3 0h2M7 12h1m3 0h1m3 0h2M8 16h8"/></svg>
+            <span>快捷键</span>
           </a>
           <a href="#appearanceSettings" aria-controls="appearanceSettings">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.5-3.3 1.5 1.5 0 0 1 1.2-2.5H17a4 4 0 0 0 4-4C21 6.7 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="6.8" r=".7"/><circle cx="16" cy="8" r=".7"/><circle cx="6.8" cy="14.5" r=".7"/></svg>
@@ -72,17 +75,18 @@
             </div>
             <div class="general-toggles">
               <div class="image-feature" data-loading aria-busy="true">
-              <div class="image-feature-row">
-              <label class="setting-toggle">
-                <span>图片翻译（点击图片旁按钮，覆盖原文）</span>
-                <input id="imageTranslationEnabled" type="checkbox" role="switch" disabled aria-describedby="ocrDescription ocrModelStatus" />
-                <span class="setting-toggle-control" aria-hidden="true"></span>
-              </label>
-              <button id="ocrModelAction" type="button" class="ocr-model-action" aria-label="安装 OCR 模型" disabled></button>
-              </div>
-              <p id="ocrDescription" class="ocr-description"></p>
-              <progress id="ocrModelProgress" class="ocr-model-progress" aria-label="OCR 模型下载进度" hidden></progress>
-              <p id="ocrModelStatus" class="ocr-model-status" role="status"></p>
+                <div class="image-feature-row">
+                  <label id="imageTranslationLabel" for="imageTranslationEnabled" class="image-feature-label" title="点击图片旁按钮，覆盖原文">图片翻译</label>
+                  <div class="ocr-help-slot"></div>
+                  <button id="ocrModelAction" type="button" class="ocr-model-action" aria-label="安装 OCR 模型" disabled></button>
+                  <label class="setting-toggle">
+                    <input id="imageTranslationEnabled" type="checkbox" role="switch" disabled aria-labelledby="imageTranslationLabel" aria-describedby="ocrDescription ocrModelStatus" />
+                    <span class="setting-toggle-control" aria-hidden="true"></span>
+                  </label>
+                </div>
+                <p id="ocrDescription" class="ocr-description"></p>
+                <progress id="ocrModelProgress" class="ocr-model-progress" aria-label="OCR 模型下载进度" hidden></progress>
+                <p id="ocrModelStatus" class="ocr-model-status" role="status"></p>
               </div>
               <label class="setting-toggle">
                 <span>启用本地缓存</span>
@@ -100,6 +104,22 @@
                 <span class="setting-toggle-control" aria-hidden="true"></span>
               </label>
             </div>
+          </section>
+
+          <section id="shortcutSettings" class="settings-panel" aria-labelledby="shortcutSettingsTitle" hidden>
+            <div class="settings-panel-heading shortcut-panel-heading">
+              <div>
+              <h2 id="shortcutSettingsTitle">快捷键</h2>
+              </div>
+              <button id="resetShortcuts" type="button" class="secondary">恢复默认</button>
+            </div>
+            <div class="shortcut-toolbar">
+              <p id="shortcutRecorderHelp" class="hint">点击按键框录入；Esc 取消，Delete 清空。修改后点击「保存」。</p>
+              <p id="shortcutStatus" class="hint" role="status" aria-live="polite"></p>
+            </div>
+            <dl id="shortcutBindings" class="shortcut-list" aria-label="翻译快捷键"></dl>
+            <h3>局部操作</h3>
+            <dl id="localShortcutBindings" class="shortcut-list" aria-label="局部快捷操作"></dl>
           </section>
 
           <section id="selectionTranslationSettings" class="settings-panel" aria-labelledby="selectionTranslationSettingsTitle" hidden>
@@ -148,6 +168,10 @@
             <fieldset class="performance-group">
               <legend>自动翻译站点</legend>
               <ul id="autoTranslateSites" class="auto-site-list" aria-label="自动翻译站点列表"></ul>
+              <div id="autoTranslateExcluded" class="auto-excluded" hidden>
+                <span class="field-label" title="这些域名不触发站点规则或非目标语言自动翻译">已排除的网站</span>
+                <ul id="autoTranslateExcludedSites" class="auto-excluded-list" aria-label="已排除的自动翻译网站"></ul>
+              </div>
               <p id="autoTranslateSiteHelp" class="hint">example.com 包含子域名，*.example.com 仅匹配子域名，https://example.com/docs/* 可限定协议和路径。</p>
               <p id="autoTranslateSiteStatus" class="hint" role="status"></p>
             </fieldset>
@@ -165,7 +189,6 @@
                 <label><input type="radio" name="appearanceMode" value="light" /><span>浅色</span></label>
                 <label><input type="radio" name="appearanceMode" value="dark" /><span>深色</span></label>
               </div>
-              <p class="field-description">跟随系统时，自动使用下方分别设置的浅色与深色方案。</p>
             </fieldset>
             <div class="appearance-layout">
               <div class="appearance-editor">
@@ -181,7 +204,6 @@
                   <select id="appearanceScheme"></select>
                   <button id="duplicateScheme" type="button" class="secondary">复制方案</button>
                 </div>
-                <p id="appearanceSchemeHint" class="field-description"></p>
                 <fieldset class="appearance-colors">
                   <legend>颜色</legend>
                   <div id="appearanceColors" class="appearance-color-groups"></div>
@@ -225,7 +247,6 @@
           <section id="providerSettings" class="settings-panel" aria-labelledby="providerSettingsTitle" hidden>
             <div class="settings-panel-heading">
               <h2 id="providerSettingsTitle">翻译服务</h2>
-              <p>选择翻译服务，管理接口、模型与连接配置。</p>
             </div>
             <div class="provider-field">
               <span class="field-label">当前服务</span>
@@ -248,7 +269,6 @@
           <section id="performanceSettings" class="settings-panel" aria-labelledby="performanceSettingsTitle" hidden>
             <div class="settings-panel-heading">
               <h2 id="performanceSettingsTitle">性能设置</h2>
-              <p>调整翻译分块、并发数和 PDF 翻译范围。</p>
             </div>
             <fieldset class="performance-group">
               <legend>通用性能</legend>
@@ -262,16 +282,15 @@
               <legend>PDF 翻译范围</legend>
               <div class="grid">
                 <label>翻译范围
-                  <select id="pdfTranslationScope" aria-describedby="pdfTranslationScopeDescription">
+                  <select id="pdfTranslationScope">
                     <option value="nearby">附近页面</option>
                     <option value="unlimited">无限制（整份 PDF）</option>
                   </select>
                 </label>
                 <label id="pdfTranslationPageRadiusField">前后各翻译页数
-                  <input id="pdfTranslationPageRadius" type="number" min="0" max="1000" step="1" aria-describedby="pdfTranslationScopeDescription" />
+                  <input id="pdfTranslationPageRadius" type="number" min="0" max="1000" step="1" />
                 </label>
               </div>
-              <p id="pdfTranslationScopeDescription" class="field-description">开始翻译后，默认处理当前页及前后各 5 页，最多 11 页。滚动后自动补译新范围，范围内完成后等待继续阅读。0 表示仅翻译当前页。</p>
             </fieldset>
           </section>
         </div>

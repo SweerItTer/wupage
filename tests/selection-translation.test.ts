@@ -41,6 +41,23 @@ afterEach(() => {
 });
 
 describe("selection dictionary UI", () => {
+  it("opens directly from an immediate keyboard selection without waiting for entry points", async () => {
+    select(); controller.openFromShortcut();
+    await vi.waitFor(() => expect(root().querySelector(".meanings")?.textContent).toContain("例子"));
+    expect(sendRuntimeRequest).toHaveBeenCalledWith({ type: "LOOKUP_DICTIONARY", provider: "youdao", query: "example" });
+    const count = vi.mocked(sendRuntimeRequest).mock.calls.length;
+    controller.openFromShortcut();
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(count);
+    expect(root().activeElement).toBe(card());
+  });
+  it("rejects missing selections, editable text and disabled selection shortcuts", () => {
+    window.getSelection()?.removeAllRanges();
+    expect(() => controller.openFromShortcut()).toThrow("请先选中");
+    select("editable"); expect(() => controller.openFromShortcut()).toThrow("输入框");
+    controller.update({ enabled: false, provider: "youdao", style: "dot" });
+    select(); expect(() => controller.openFromShortcut()).toThrow("启用划词翻译");
+    expect(sendRuntimeRequest).not.toHaveBeenCalled();
+  });
   it("only queries after activation, retains the browser selection and renders pronunciation and meanings", async () => {
     await show(); expect(sendRuntimeRequest).not.toHaveBeenCalled();
     const event = new MouseEvent("pointerdown", { bubbles: true, composed: true, cancelable: true });
@@ -189,6 +206,20 @@ describe("selection dictionary UI", () => {
 });
 
 describe("editing selected text in the card", () => {
+  it("independently disables keyboard submission and Escape without disabling buttons", async () => {
+    await show(); open(); await vi.waitFor(() => expect(root().querySelector(".meanings")).not.toBeNull());
+    controller.updateShortcuts({ "selection-submit": false, "dismiss-overlays": false });
+    edit("edited sentence"); const calls = vi.mocked(sendRuntimeRequest).mock.calls.length;
+    source().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, composed: true }));
+    source().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(card().hidden).toBe(false); expect(sendRuntimeRequest).toHaveBeenCalledTimes(calls);
+    expect(root().querySelector(".submit-source")?.getAttribute("title")).toBe("翻译");
+    submit(); await vi.waitFor(() => expect(root().querySelector(".selection-translation")).not.toBeNull());
+    controller.updateShortcuts(undefined);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(card().hidden).toBe(true);
+  });
   it("keeps editor keystrokes away from page shortcuts and still supports Escape", async () => {
     await show(); open(); await vi.waitFor(() => expect(root().querySelector(".meanings")).not.toBeNull());
     const listener = vi.fn();

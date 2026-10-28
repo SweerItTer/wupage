@@ -21,6 +21,8 @@ export default defineConfig(({ mode }) => {
         await writeFile(resolve(__dirname, outDir, "manifest.json"), JSON.stringify(browserManifest(manifest, firefox), null, 2) + "\n");
         await bundle({ entryPoints: ["src/content/index.ts"], outfile: resolve(__dirname, outDir, "content.js"),
           bundle: true, minify: true, sourcemap, format: "iife", platform: "browser", target });
+        await bundle({ entryPoints: ["src/content/paragraph-frame.ts"], outfile: resolve(__dirname, outDir, "paragraph-frame.js"),
+          bundle: true, minify: true, sourcemap, format: "iife", platform: "browser", target });
         const output = resolve(__dirname, outDir, "ocr-runtime");
         await mkdir(output, { recursive: true });
         await bundle({ entryPoints: ["src/ocr/sandbox.ts"], outfile: resolve(output, "engine.js"), bundle: true, minify: true, format: "iife", platform: "browser", target, external: ["fs", "path"],

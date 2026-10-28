@@ -133,7 +133,7 @@ describe("popup language controls", () => {
     });
 
     expect(query<HTMLButtonElement>("#pageToggle").disabled).toBe(true);
-    expect(query<HTMLButtonElement>("#paragraphMode").disabled).toBe(true);
+    expect(query<HTMLOptionElement>('#translationDisplayMode option[value="paragraph"]').disabled).toBe(true);
     expect(query<HTMLButtonElement>("#debug").disabled).toBe(true);
     expect(sendTabMessage).not.toHaveBeenCalled();
 

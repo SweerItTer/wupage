@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setupOcrControl } from "../src/shared/ocr-control";
 import type { OcrStatus } from "../src/shared/ocr";
 
-afterEach(() => { window.dispatchEvent(new Event("pagehide")); vi.unstubAllGlobals(); document.body.replaceChildren(); });
+afterEach(() => { window.dispatchEvent(new Event("pagehide")); vi.useRealTimers(); vi.unstubAllGlobals(); document.body.replaceChildren(); });
 describe("OCR installation controls", () => {
   it("gates the switch, shows progress, changes the wrench to trash, and disables after removal", async () => {
     document.body.innerHTML = '<button id="toggle" aria-pressed="false"></button><button id="ocrModelAction"></button><p id="ocrDescription"></p><p id="ocrModelStatus"></p><progress id="ocrModelProgress"></progress>';
@@ -43,5 +43,34 @@ describe("OCR installation controls", () => {
     await vi.waitFor(() => expect(document.querySelector("#ocrModelStatus")?.textContent).toContain("网络不可用"));
     expect(toggle.disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>("#ocrModelAction")!.disabled).toBe(false);
+  });
+
+  it("scopes controls to the supplied menu and pauses polling while it is closed", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<button id="ocrModelAction">Host page</button><div id="menu" class="image-feature-row"><button id="toggle"></button><button id="model"></button><p id="description"></p><p id="status"></p><progress></progress></div>';
+    let visible = true;
+    const sendMessage = vi.fn(async () => ({ ok: true, data: { state: "installed", total: 100, downloaded: 100 } }));
+    vi.stubGlobal("chrome", { runtime: { sendMessage } });
+    const control = setupOcrControl(document.querySelector<HTMLButtonElement>("#toggle")!, vi.fn(), {
+      helpId: "menu-help", shouldPoll: () => visible,
+      elements: {
+        action: document.querySelector<HTMLButtonElement>("#model")!,
+        description: document.querySelector<HTMLElement>("#description")!,
+        status: document.querySelector<HTMLElement>("#status")!,
+        progress: document.querySelector<HTMLProgressElement>("progress")!
+      }
+    });
+    await control.refresh();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(document.querySelector("#ocrModelAction")?.textContent).toBe("Host page");
+    expect(document.querySelector("#menu-help")).not.toBeNull();
+    visible = false; control.pause();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    visible = true; await control.refresh();
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    control.dispose();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 });

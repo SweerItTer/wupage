@@ -30,7 +30,7 @@ describe.each(["popup", "options"] as const)("%s image translation initializatio
     return {
       feature: document.querySelector<HTMLElement>(".image-feature")!,
       toggle: document.querySelector<HTMLButtonElement | HTMLInputElement>(page === "popup" ? "#imageTranslation" : "#imageTranslationEnabled")!,
-      control: document.querySelector<HTMLElement>(page === "popup" ? "#imageTranslation .switch" : ".image-feature .setting-toggle-control")!
+      control: document.querySelector<HTMLElement>(page === "popup" ? "#imageTranslation" : ".image-feature .setting-toggle-control")!
     };
   }
 

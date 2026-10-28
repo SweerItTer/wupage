@@ -45,11 +45,13 @@ let context;
 try {
   context = await chromium.launchPersistentContext(path.join(output, `profile-${Date.now()}`), {
     ...(process.env.PDF_TEST_BROWSER ? { executablePath: process.env.PDF_TEST_BROWSER } : { channel: 'chromium' }),
-    headless: true, ignoreDefaultArgs: ['--disable-extensions'], args: [`--load-extension=${path.join(root, 'dist')}`],
+    headless: true, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging'],
     viewport: { width: 1200, height: 850 }
   });
+  const browserSession = await context.browser().newBrowserCDPSession();
+  const { id: extensionId } = await browserSession.send('Extensions.loadUnpacked', { path: path.join(root, 'dist') });
+  await browserSession.detach();
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-  const extensionId = new URL(worker.url()).host;
   const control = await context.newPage();
   await control.goto(`chrome-extension://${extensionId}/options.html`);
   await control.evaluate(async (origin) => {
@@ -177,17 +179,46 @@ try {
   await page.mouse.move(20, 20);
   await menu.waitFor({state:'hidden', timeout:2000});
   await ball.hover();
-  await page.locator('[data-action="paragraph-mode"]').hover();
+  await page.locator('[data-role="display-mode"]').hover();
   assert.equal(await menu.isVisible(), true, 'menu remains open across hover gap');
   await page.screenshot({path:path.join(output, 'desktop-menu.png')});
   await menu.screenshot({path:path.join(output, 'menu-preview.png')});
+  const compact = await menu.evaluate(element => {
+    const header = element.querySelector('.wupage-menu-header').getBoundingClientRect();
+    const languages = element.querySelector('.wupage-language-pair').getBoundingClientRect();
+    const provider = element.querySelector('[data-role="provider"]').closest('label').getBoundingClientRect();
+    const target = element.querySelector('[data-role="target-lang"]').getBoundingClientRect();
+    const auto = element.querySelector('[data-action="auto-translation"]').getBoundingClientRect();
+    return { headerGap: languages.top - header.bottom, languageGap: provider.top - languages.bottom,
+      automaticBesideTarget: auto.left > target.right && Math.abs(auto.y + auto.height / 2 - target.y - target.height / 2) < 1,
+      fontSize: getComputedStyle(element.querySelector('strong')).fontSize };
+  });
+  assert.equal(compact.headerGap,6);assert.equal(compact.languageGap,6);assert.equal(compact.fontSize,'15px');
+  assert.equal(compact.automaticBesideTarget,true);
+  assert.equal(await menu.getByRole('button',{name:'打开设置',exact:true}).locator('svg').count(),1);
+  const selectionToggle = menu.locator('[data-action="selection-translation"]');
+  await selectionToggle.click();
+  await page.waitForFunction(()=>document.querySelector('[data-action="selection-translation"]').getAttribute('aria-pressed')==='false');
+  const syncedPopup = await openPopup();
+  assert.equal(await syncedPopup.locator('#selectionTranslation').getAttribute('aria-pressed'),'false');
+  await syncedPopup.locator('#selectionTranslation').click();
+  await page.waitForFunction(()=>document.querySelector('[data-action="selection-translation"]').getAttribute('aria-pressed')==='true');
+  await syncedPopup.close();await page.bringToFront();await ball.hover();await menu.waitFor({state:'visible'});
+  await menu.locator('[data-role="ocr-action"][data-state="missing"]').waitFor();
+  assert.equal(await menu.locator('[data-action="image-translation"]').isDisabled(),true);
+  await menu.locator('.ocr-help-trigger').click();
+  await menu.locator('#wupage-ocr-help').waitFor({state:'visible'});
+  const helpBox=await menu.locator('#wupage-ocr-help').boundingBox();
+  assert.ok(helpBox.x>=0&&helpBox.y>=0&&helpBox.x+helpBox.width<=page.viewportSize().width&&helpBox.y+helpBox.height<=page.viewportSize().height);
+  await page.keyboard.press('Escape');
+  await menu.locator('#wupage-ocr-help').waitFor({state:'hidden'});
   await ball.click();
   await page.waitForFunction(() => document.querySelector('#wupage-floating-ball').getAttribute('aria-busy') === 'false' && document.querySelector('.wupage-translation:not(.wupage-translation-pending)'));
   assert.ok(calls > 0);
   const afterTranslation = calls;
   await page.mouse.move(20, 20);
   await ball.hover();
-  await page.locator('[data-mode="replace"]').click();
+  await page.locator('[data-role="display-mode"]').selectOption('replace');
   await page.waitForFunction(() => document.querySelector('.wupage-translation')?.dataset.wupageDisplayMode === 'replace');
   assert.equal(calls, afterTranslation);
   await page.screenshot({path:path.join(output, 'translated-menu.png')});
@@ -266,9 +297,9 @@ try {
   await hitbox.waitFor({state:'hidden'});
   await popup.locator('#floatingBall:not(:disabled)').click();
   await hitbox.waitFor({state:'visible'});
-  await popup.locator('#paragraphMode').click();
+  await popup.locator('#translationDisplayMode').selectOption('paragraph');
   await page.waitForFunction(()=>document.documentElement.classList.contains('wupage-paragraph-mode'));
-  await popup.locator('#paragraphMode:not(:disabled)').click();
+  await popup.locator('#translationDisplayMode:not(:disabled)').selectOption('bilingual');
   await page.waitForFunction(()=>!document.documentElement.classList.contains('wupage-paragraph-mode'));
 
   await control.evaluate(async()=>{
@@ -328,7 +359,7 @@ try {
   });
   for(const mode of ['bilingual','bilingual-accent','replace']){
     const before=calls;
-    await page.locator(`[data-mode="${mode}"]`).click();
+    await page.locator('[data-role="display-mode"]').selectOption(mode);
     await page.waitForFunction(mode=>[...document.querySelectorAll('.wupage-translation')].every(node=>node.dataset.wupageDisplayMode===mode),mode);
     assert.equal(calls,before,'display choices reuse current translations');
   }

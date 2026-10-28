@@ -33,11 +33,6 @@ body {
   letter-spacing: -0.5px;
 }
 
-.settings-header p {
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 .settings-nav {
   display: grid;
   gap: 6px;
@@ -282,6 +277,12 @@ button.auto-translation-help-trigger:hover { color: var(--wp-accent, #116466); b
 button.auto-translation-help-trigger:focus-visible { outline: 2px solid var(--wp-accent, #116466); outline-offset: 2px; }
 .auto-translation-help-panel { position: fixed; z-index: 1000; box-sizing: border-box; width: 320px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; padding: 12px 14px; border: 1px solid var(--wp-border, #c7d4d4); border-radius: 10px; background: var(--wp-surface, #fff); box-shadow: 0 6px 24px #17203326; color: var(--wp-muted, #526068); font-size: 12px; line-height: 1.6; font-weight: 400; }
 .auto-translation-help-panel[hidden] { display: none; }
+.auto-excluded { display: grid; min-width: 0; gap: 6px; }
+.auto-excluded[hidden] { display: none; }
+.auto-excluded-list { display: flex; flex-wrap: wrap; min-width: 0; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.auto-excluded-list li { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 3px 6px 3px 10px; border: 1px solid var(--wp-border, #c9d1cf); border-radius: 6px; background: var(--wp-soft, #eef2f1); font-size: 12px; }
+.auto-excluded-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auto-excluded-list button { flex: 0 0 22px; width: 22px; min-height: 22px; padding: 0; background: transparent; color: var(--wp-muted, #526068); font-size: 18px; line-height: 1; }
 .auto-translation-controls .auto-translation-master { flex: 0 0 auto; gap: 12px; min-height: 26px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .auto-language-option { display: flex; align-items: center; gap: 7px; min-width: 0; margin-left: auto; color: var(--wp-foreground, #172026); line-height: 1.4; cursor: pointer; }
 .auto-language-option[hidden] { display: none; }
@@ -597,11 +598,67 @@ button.auto-translation-help-trigger:focus-visible { outline: 2px solid var(--wp
 
 .general-toggles {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
-@container settings (max-width: 660px) {
+.general-toggles .image-feature-row {
+  min-height: 38px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--wp-border, #d7dedb);
+  border-radius: 6px;
+  background: var(--wp-soft, #f8faf9);
+}
+
+.general-toggles .image-feature-label {
+  color: var(--wp-foreground, #26343a);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.general-toggles .image-feature-row:has(input:disabled) .image-feature-label {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.general-toggles .image-feature-row > .setting-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.general-toggles .ocr-help-slot {
+  display: flex;
+  align-items: center;
+}
+
+.general-toggles .ocr-help {
+  flex-basis: 18px;
+}
+
+.general-toggles .ocr-help-trigger {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  font-size: 11px;
+}
+
+.general-toggles .ocr-model-action {
+  flex-basis: 24px;
+  width: 24px;
+  min-height: 28px;
+  padding: 3px;
+}
+
+.general-toggles .ocr-model-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+@container settings (max-width: 800px) {
   .general-toggles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -951,4 +1008,50 @@ button.secondary {
   color: var(--wp-muted, #526068);
   font-size: 13px;
   line-height: 1.5;
+}
+
+#shortcutSettings { padding: 20px; gap: 10px; }
+.shortcut-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; }
+.shortcut-panel-heading > div { display: grid; gap: 4px; }
+.shortcut-panel-heading button { flex: 0 0 auto; min-height: 32px; padding: 0 10px; font-size: 12px; }
+.shortcut-toolbar { min-width: 0; }
+.shortcut-toolbar .hint { font-size: 12px; }
+#shortcutStatus:empty, .shortcut-toolbar:has(#shortcutStatus:not(:empty)) #shortcutRecorderHelp { display: none; }
+.settings:has(#shortcutSettings:not([hidden])) .settings-actions { position: static; }
+.shortcut-list { margin: 0; border: 1px solid var(--wp-border, #d7dedb); border-radius: 6px; overflow: hidden; }
+.shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.shortcut-row + .shortcut-row { border-top: 1px solid var(--wp-border, #d7dedb); }
+.shortcut-row dt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+.shortcut-row dt label { display: inline; color: var(--wp-foreground, #172026); cursor: pointer; }
+.shortcut-row[data-enabled='false'] dt { opacity: .65; }
+.shortcut-row dd { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; flex-shrink: 0; gap: 4px; margin: 0; font-size: 12px; }
+.shortcut-row dd.shortcut-editor { display: grid; grid-template-columns: minmax(0, max-content) max-content 34px; align-items: start; gap: 4px; }
+.shortcut-field { display: grid; gap: 4px; min-width: 0; width: calc(var(--shortcut-width, 13ch) + 18px); max-width: 100%; font-size: 12px; }
+.shortcut-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 32px; height: 32px; padding: 0 8px; cursor: pointer; font-size: 12px; }
+.shortcut-field input:focus-visible { outline: 2px solid var(--wp-accent, #116466); outline-offset: 2px; }
+.shortcut-field input[data-recording='true'] { border-color: var(--wp-accent, #116466); background: var(--wp-selected, #e5efeb); }
+.shortcut-field input[aria-invalid='true'] { border-color: var(--wp-danger, #ad3737); }
+.shortcut-error { color: var(--wp-danger, #ad3737); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.shortcut-error:empty { display: none; }
+.shortcut-editor .shortcut-small-button { min-height: 32px; padding: 0 6px; color: var(--wp-muted, #526068); background: transparent; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.shortcut-small-button:hover:enabled { color: var(--wp-accent, #116466); background: var(--wp-soft, #f1f4f3); }
+.shortcut-small-button:disabled { cursor: default; opacity: .4; }
+.shortcut-row kbd { display: inline-block; padding: 2px 6px; border: 1px solid var(--wp-border, #c9d1cf); border-bottom-width: 2px; border-radius: 4px; color: var(--wp-foreground, #172026); background: var(--wp-soft, #f1f4f3); font: 11px/1.5 ui-monospace, monospace; }
+.shortcut-row dd.shortcut-local-controls { display: grid; grid-template-columns: auto 34px; gap: 12px; }
+.shortcut-local-row { min-height: 30px; padding: 6px 12px; }
+.shortcut-local-keys { display: flex; align-items: center; gap: 4px; }
+.shortcut-row .shortcut-switch { position: relative; align-self: center; justify-self: end; width: 30px; min-width: 30px; min-height: 20px; height: 20px; padding: 0; border-radius: 10px; background: var(--wp-border, #c9d1cf); }
+.shortcut-switch::after { content: ''; position: absolute; width: 16px; height: 16px; top: 2px; left: 2px; border-radius: 50%; background: var(--wp-surface, #fff); box-shadow: 0 1px 3px #0002; transition: transform 120ms; }
+.shortcut-row .shortcut-switch[aria-checked='true'] { background: var(--wp-accent, #116466); }
+.shortcut-switch[aria-checked='true']::after { transform: translateX(10px); }
+.shortcut-switch:focus-visible { outline: 2px solid var(--wp-accent, #116466); outline-offset: 3px; }
+.shortcut-switch:disabled { opacity: .4; cursor: default; }
+#shortcutSettings h3 { margin: 4px 0 0; font-size: 13px; }
+@container settings (max-width: 640px) {
+  .shortcut-row:not(.shortcut-local-row) { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .shortcut-row dd { flex-shrink: 1; justify-content: flex-start; }
+  .shortcut-row dd.shortcut-editor { width: 100%; grid-template-columns: minmax(0, max-content) max-content 34px; justify-content: flex-end; }
+  .shortcut-local-row { gap: 8px; }
+  .shortcut-local-row dt { font-size: 12px; }
+  .shortcut-row dd.shortcut-local-controls { gap: 8px; }
 }

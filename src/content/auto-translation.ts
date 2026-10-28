@@ -1,4 +1,4 @@
-import { languageFamily, matchesAutoTranslationSite, normalizeAutoTranslation } from "../shared/auto-translation";
+import { isAutoTranslationWebsiteExcluded, languageFamily, matchesAutoTranslationSite, normalizeAutoTranslation } from "../shared/auto-translation";
 import { SETTINGS_KEY } from "../shared/defaults";
 import type { ExtensionSettings } from "../shared/types";
 import { hasPageTranslations } from "./dom";
@@ -66,7 +66,7 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
   }
 
   function schedule(): void {
-    if (disposed || handled || !settings?.autoTranslation?.enabled || document.visibilityState === "hidden") return;
+    if (disposed || handled || !settings?.autoTranslation?.enabled || isAutoTranslationWebsiteExcluded(settings.autoTranslation, location.href) || document.visibilityState === "hidden") return;
     if (running) { dirty = true; return; }
     if (timer !== undefined) return;
     timer = window.setTimeout(() => { timer = undefined; void evaluate(); }, 350);
@@ -80,7 +80,7 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
     try {
       if (deps.active()) { handled = true; return; }
       const config = normalizeAutoTranslation(current.autoTranslation);
-      if (!config.enabled) return;
+      if (!config.enabled || isAutoTranslationWebsiteExcluded(config, location.href)) return;
       const siteMatch = matchesAutoTranslationSite(config, location.href);
       if (!siteMatch && !config.nonTargetLanguage) return;
       const sample = pageText();
@@ -114,7 +114,7 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
     generation++;
     if (changed) { stopOwned(); handled = deps.active(); lastSample = ""; }
     settings = { ...value, autoTranslation: config };
-    if (config.enabled) observer.observe(document.documentElement, {
+    if (config.enabled && !isAutoTranslationWebsiteExcluded(config, location.href)) observer.observe(document.documentElement, {
       childList: true, subtree: true, characterData: true, attributes: true,
       attributeFilter: ["lang", "hidden", "aria-hidden", "style", "class"]
     });

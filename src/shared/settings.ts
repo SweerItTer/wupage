@@ -3,6 +3,7 @@ import { isLlmProvider } from "./performance";
 import { normalizeAutoTranslation } from "./auto-translation";
 import { normalizeSelectionTranslation } from "./dictionary";
 import { normalizeAppearance } from "./appearance";
+import { normalizeShortcutEnabled, normalizeShortcuts } from "./shortcuts";
 import { normalizeServiceConfig, supportsServiceMode } from "./translation-service";
 import { normalizeRequestTemplate, supportsRequestTemplate } from "./request-template";
 import type { ExtensionSettings, ProviderConfig } from "./types";
@@ -38,6 +39,8 @@ export function normalizeSettings(value: unknown): ExtensionSettings {
     ...DEFAULT_SETTINGS,
     ...input,
     providers,
+    shortcuts: normalizeShortcuts(input.shortcuts),
+    shortcutEnabled: normalizeShortcutEnabled(input.shortcutEnabled, input.shortcuts),
     appearance: normalizeAppearance(input.appearance),
     autoTranslation: normalizeAutoTranslation(input.autoTranslation),
     selectionTranslation: normalizeSelectionTranslation(input.selectionTranslation),
@@ -62,6 +65,7 @@ export function normalizeSettings(value: unknown): ExtensionSettings {
         ? input.translateCodeComments
         : DEFAULT_SETTINGS.translateCodeComments,
     imageTranslationEnabled: input.imageTranslationEnabled === true,
+    contextMenuTranslationEnabled: input.contextMenuTranslationEnabled === true,
     translationDisplayMode: isTranslationDisplayMode(input.translationDisplayMode)
       ? input.translationDisplayMode
       : DEFAULT_SETTINGS.translationDisplayMode

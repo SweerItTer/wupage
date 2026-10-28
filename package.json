@@ -16,6 +16,7 @@
     "test:floating": "node scripts/test-floating-interactions.mjs",
     "test:floating-responsive": "node scripts/test-floating-responsive.mjs",
     "test:selection": "node scripts/test-selection-translation.mjs",
+    "test:shortcuts": "node scripts/test-shortcuts.mjs",
     "test:settings": "node scripts/test-settings-initialization.mjs",
     "test:appearance": "node scripts/test-appearance.mjs",
     "test:services": "node scripts/test-service-modes.mjs",

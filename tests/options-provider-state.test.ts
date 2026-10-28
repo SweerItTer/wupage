@@ -317,7 +317,7 @@ describe("options provider model and test state", () => {
       await mount();
       expect(document.querySelector("#providerForm [data-field='apiKey']")).toBeNull();
       expect(document.querySelector("#providerModel")).toBeNull();
-      expect(query<HTMLElement>("#providerForm").textContent).toContain("无需注册或填写 API Key");
+      expect(document.querySelector("#translationFreeHint")).toBeNull();
       expect(document.querySelector("#providerTriggerIcon svg")).not.toBeNull();
       if (id === "mymemory") expect(query<HTMLElement>("#providerForm").textContent).toContain("5,000");
       query<HTMLButtonElement>("#save").click();
