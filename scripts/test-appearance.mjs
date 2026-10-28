@@ -35,10 +35,12 @@ let context;
 try {
   context = await chromium.launchPersistentContext(path.join(output, `profile-${Date.now()}`), {
     ...(process.env.PDF_TEST_BROWSER ? { executablePath: process.env.PDF_TEST_BROWSER } : { channel: 'chromium' }),
-    headless: true, ignoreDefaultArgs: ['--disable-extensions'], args: [`--load-extension=${path.join(root, 'dist')}`],
+    headless: true, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging'],
     viewport: { width: 1440, height: 1040 }, colorScheme: 'light'
   });
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  const session = await context.browser().newBrowserCDPSession();
+  await session.send('Extensions.loadUnpacked', { path: path.join(root, 'dist') }); await session.detach();
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const extensionId = new URL(worker.url()).host;
   const base = `chrome-extension://${extensionId}`;
@@ -58,6 +60,8 @@ try {
   await options.goto(`${base}/options.html#appearanceSettings`);
   await options.waitForFunction(() => document.querySelector('#appearanceScheme').options.length > 0);
   assert.equal(await options.locator('[name="appearanceMode"]:checked').inputValue(), 'system');
+  assert.equal(await options.locator('#floatingOpacityRange').inputValue(), '100');
+  assert.equal(await options.locator('#floatingOpacityRange').isEnabled(), true);
   await options.screenshot({ path: path.join(output, 'light.png'), fullPage: true });
   const origin = `http://127.0.0.1:${server.address().port}`;
   await options.evaluate(async origin => {
@@ -158,14 +162,51 @@ try {
   assert.equal(translationCalls, callsBeforeColors);
   await site.screenshot({ path: path.join(output, 'component-colors.png'), fullPage: true });
   checks.push('independent floating, hover, dictionary and image colors; existing bilingual text recolors in place without translation requests');
+  await options.bringToFront();
+  const opacityRange = options.locator('#floatingOpacityRange');
+  const opacityNumber = options.locator('#floatingOpacityNumber');
+  await opacityRange.evaluate(el => el.scrollIntoView({ block: 'center' }));
+  await opacityRange.focus(); await opacityRange.press('Home'); await opacityRange.press('ArrowRight');
+  assert.equal(await opacityNumber.inputValue(), '1');
+  const sliderBox = await opacityRange.boundingBox();
+  await options.mouse.move(sliderBox.x + sliderBox.width - 8, sliderBox.y + sliderBox.height / 2);
+  await options.mouse.down();
+  await options.mouse.move(sliderBox.x + sliderBox.width * .45, sliderBox.y + sliderBox.height / 2, { steps: 8 });
+  await options.mouse.up();
+  const draggedValue = Number(await opacityRange.inputValue());
+  assert.ok(draggedValue > 20 && draggedValue < 80);
+  assert.equal(await opacityNumber.inputValue(), String(draggedValue));
+  for (const value of [0, 100, 55]) {
+    await opacityNumber.fill(String(value));
+    assert.equal(await opacityRange.inputValue(), String(value));
+    assert.equal(await options.locator('.appearance-preview-ball').evaluate(el => getComputedStyle(el).opacity), String(value / 100));
+  }
+  assert.equal(await site.locator('#wupage-floating-ball').evaluate(el => getComputedStyle(el).opacity), '1');
+  await options.locator('[data-color-group="floating"]').screenshot({ path: path.join(output, 'floating-opacity.png') });
+  await options.locator('#save').click();
+  await site.waitForFunction(() => getComputedStyle(document.querySelector('#wupage-floating-ball')).opacity === '0.55');
+  await site.bringToFront(); await site.locator('#wupage-floating-ball').hover();
+  await site.locator('#wupage-floating-menu').waitFor({ state: 'visible' });
+  assert.equal(await site.locator('#wupage-floating-menu').evaluate(el => getComputedStyle(el).opacity), '1');
+  await site.keyboard.press('Escape');
+  const ballBox = await site.locator('#wupage-floating-ball').boundingBox();
+  await site.mouse.move(ballBox.x + ballBox.width / 2, ballBox.y + ballBox.height / 2);
+  await site.mouse.down();
+  await site.mouse.move(ballBox.x + ballBox.width / 2 - 30, ballBox.y + ballBox.height / 2 - 15, { steps: 6 });
+  const draggingOpacity = await site.locator('#wupage-floating-ball').evaluate(el => Number(getComputedStyle(el).opacity));
+  assert.ok(Math.abs(draggingOpacity - .55 * .92) < .001);
+  await site.mouse.up();
+  await site.waitForFunction(() => getComputedStyle(document.querySelector('#wupage-floating-ball')).opacity === '0.55');
+  checks.push('opacity slider, numeric entry and live preview; saved opacity updates the ball and dragging while the menu remains opaque');
   // Saving from a popup opened before the appearance edit must retain the newer palette.
   await popup.locator('#sourceLang').selectOption('en');
   await popup.waitForFunction(async () => (await chrome.storage.local.get('wupage.settings'))['wupage.settings'].sourceLang === 'en');
   await options.reload();
   await options.waitForFunction(() => document.querySelector('#appearanceSchemeName').value === '我的午夜');
   assert.equal(await options.locator('[data-color-hex="accent"]').inputValue(), '#ffcc66');
+  assert.equal(await options.locator('#floatingOpacityNumber').inputValue(), '55');
   await options.screenshot({ path: path.join(output, 'custom.png'), fullPage: true });
-  checks.push('custom colors preview, persist on reopen and survive saves from an existing popup');
+  checks.push('custom colors and opacity persist on reopen and survive saves from an existing popup');
 
   await options.locator('[name="appearanceMode"][value="system"]').check();
   await options.emulateMedia({ colorScheme: 'light' });

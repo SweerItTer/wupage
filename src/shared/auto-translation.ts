@@ -74,6 +74,15 @@ export function normalizeAutoTranslation(value: unknown): AutoTranslationSetting
   const presets = new Set(AUTO_TRANSLATION_PRESETS.map(site => site.domain));
   const removed = Array.isArray(input.removedPresetSites)
     ? [...new Set(input.removedPresetSites.filter((site): site is string => typeof site === "string" && presets.has(site)))] : [];
+  const excluded = new Set<string>();
+  if (Array.isArray(input.excludedSites)) for (const site of input.excludedSites) {
+    if (typeof site !== "string") continue;
+    try {
+      const pattern = normalizeSitePattern(site);
+      const url = new URL(pattern.includes("://") ? pattern : `https://${pattern}`);
+      if (url.pathname === "/" && !url.hostname.startsWith("*.")) excluded.add(currentWebsitePattern(url.href)!);
+    } catch { /* Ignore invalid imported exclusions. */ }
+  }
   const patterns = new Set<string>();
   const ids = new Set<string>();
   const customSites: AutoTranslationSite[] = [];
@@ -93,19 +102,78 @@ export function normalizeAutoTranslation(value: unknown): AutoTranslationSetting
     nonTargetLanguage: input.nonTargetLanguage === true,
     presetSites: Array.isArray(input.presetSites) ? [...new Set(input.presetSites.filter((site): site is string => typeof site === "string" && presets.has(site) && !removed.includes(site)))] : [],
     customSites,
-    ...(removed.length ? { removedPresetSites: removed } : {})
+    ...(removed.length ? { removedPresetSites: removed } : {}),
+    ...(excluded.size ? { excludedSites: [...excluded] } : {})
   };
 }
 
 export function matchesAutoTranslationSite(settings: AutoTranslationSettings, address: string): boolean {
-  return settings.enabled && (settings.presetSites.some(pattern => matchesSitePattern(pattern, address))
+  return settings.enabled && !isAutoTranslationWebsiteExcluded(settings, address) && (settings.presetSites.some(pattern => matchesSitePattern(pattern, address))
     || settings.customSites.some(rule => rule.enabled && matchesSitePattern(rule.pattern, address)));
 }
 
 export function setAutoTranslationEnabled(value: unknown, enabled: boolean): AutoTranslationSettings {
   const settings = normalizeAutoTranslation(value);
-  const unconfigured = !settings.presetSites.length && !settings.customSites.length && !settings.nonTargetLanguage && !settings.removedPresetSites?.length;
+  const unconfigured = !settings.presetSites.length && !settings.customSites.length && !settings.nonTargetLanguage && !settings.removedPresetSites?.length && !settings.excludedSites?.length;
   return { ...settings, enabled, nonTargetLanguage: settings.nonTargetLanguage || (enabled && unconfigured) };
+}
+
+export function currentWebsitePattern(address: string | undefined): string | undefined {
+  try {
+    const url = new URL(address ?? "");
+    if (!["http:", "https:"].includes(url.protocol)) return undefined;
+    return normalizeSitePattern(url.host);
+  } catch { return undefined; }
+}
+
+function coversWebsite(pattern: string, address: string): boolean {
+  const rule = new URL(pattern.includes("://") ? pattern : `https://${pattern}`);
+  return ["/", "/*"].includes(rule.pathname) && matchesSitePattern(pattern, address);
+}
+
+export function isAutoTranslationWebsiteExcluded(value: unknown, address: string | undefined): boolean {
+  const pattern = currentWebsitePattern(address);
+  return Boolean(pattern && normalizeAutoTranslation(value).excludedSites?.includes(pattern));
+}
+
+export function hasAutoTranslationWebsite(value: unknown, address: string | undefined): boolean {
+  if (!currentWebsitePattern(address)) return false;
+  const settings = normalizeAutoTranslation(value);
+  return settings.enabled && !isAutoTranslationWebsiteExcluded(settings, address) && (settings.presetSites.some(pattern => coversWebsite(pattern, address!))
+    || settings.customSites.some(site => site.enabled && coversWebsite(site.pattern, address!)));
+}
+
+export function addAutoTranslationWebsite(value: unknown, address: string | undefined): AutoTranslationSettings {
+  const pattern = currentWebsitePattern(address);
+  if (!pattern) throw new Error("请切换到普通网页后再添加网站。");
+  let settings = normalizeAutoTranslation(value);
+  if (!settings.enabled) throw new Error("请先开启自动翻译。");
+  if (settings.excludedSites?.includes(pattern)) {
+    const excluded = settings.excludedSites.filter(site => site !== pattern);
+    const { excludedSites: _excluded, ...retained } = settings;
+    settings = { ...retained, ...(excluded.length ? { excludedSites: excluded } : {}) };
+  }
+  if (hasAutoTranslationWebsite(settings, address)) return settings;
+  const hostname = new URL(address!).hostname;
+  const existing = settings.customSites.find(site => {
+    const rule = new URL(site.pattern.includes("://") ? site.pattern : `https://${site.pattern}`);
+    return rule.hostname === hostname && coversWebsite(site.pattern, address!);
+  });
+  if (existing) return { ...settings, customSites: settings.customSites.map(site => site === existing ? { ...site, enabled: true } : site) };
+  if (AUTO_TRANSLATION_PRESETS.some(site => site.domain === pattern)) {
+    const removed = settings.removedPresetSites?.filter(site => site !== pattern);
+    const { removedPresetSites: _removed, ...retained } = settings;
+    return { ...retained, presetSites: [...settings.presetSites, pattern], ...(removed?.length ? { removedPresetSites: removed } : {}) };
+  }
+  return { ...settings, customSites: [...settings.customSites, { id: `site-${crypto.randomUUID()}`, pattern, enabled: true }] };
+}
+
+export function excludeAutoTranslationWebsite(value: unknown, address: string | undefined): AutoTranslationSettings {
+  const pattern = currentWebsitePattern(address);
+  if (!pattern) throw new Error("请切换到普通网页后再排除网站。");
+  const settings = normalizeAutoTranslation(value);
+  if (!settings.enabled) throw new Error("请先开启自动翻译。");
+  return { ...settings, excludedSites: [...new Set([...(settings.excludedSites ?? []), pattern])] };
 }
 
 export function languageFamily(language: string): string {

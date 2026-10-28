@@ -4,12 +4,15 @@ import { DICTIONARY_LABELS, MAX_SELECTION_TEXT_LENGTH, dictionarySourceUrl, isSi
 import type { ExtensionSettings, TranslateBatchResponse } from "../shared/types";
 import { sendRuntimeRequest } from "./runtime";
 import { SELECTION_TRANSLATION_STYLES } from "./selection-translation-styles";
+import { normalizeShortcutEnabled } from "../shared/shortcuts";
+import { uiIconMarkup } from "../shared/ui-icons";
 
 const HOST_ID = "wupage-selection-tools";
 const EXCLUDED = "input,textarea,select,button,[contenteditable]:not([contenteditable='false']),[role='textbox'],#wupage-selection-tools,#wupage-floating-hitbox,#wupage-floating-menu,#wupage-debug-panel,#wupage-image-tools";
 
 export class SelectionTranslationController {
   private settings: SelectionTranslationSettings;
+  private shortcutEnabled = normalizeShortcutEnabled(undefined);
   private host: HTMLElement;
   private root: ShadowRoot;
   private triggers: HTMLElement;
@@ -75,8 +78,8 @@ export class SelectionTranslationController {
     this.word.addEventListener("focus", () => this.resizeSourceEditor());
     this.word.addEventListener("keydown", event => {
       event.stopPropagation();
-      if (event.key === "Escape" && !event.isComposing) { this.close(); return; }
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+      if (event.key === "Escape" && !event.isComposing && this.shortcutEnabled["dismiss-overlays"]) { this.close(); return; }
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing && this.shortcutEnabled["selection-submit"]) {
         event.preventDefault(); this.submitEditedText();
       }
     });
@@ -94,7 +97,7 @@ export class SelectionTranslationController {
     this.translationService.className = "translation-service";
     this.translationService.hidden = true;
     const close = document.createElement("button");
-    close.type = "button"; close.className = "close"; close.textContent = "×";
+    close.type = "button"; close.className = "close"; close.innerHTML = uiIconMarkup("cross");
     close.setAttribute("aria-label", "关闭划词翻译");
     close.addEventListener("click", () => this.close());
     header.append(this.word, this.providerSelect, this.translationService, close);
@@ -139,6 +142,20 @@ export class SelectionTranslationController {
     this.settings = settings;
   }
 
+  updateShortcuts(value: unknown): void {
+    this.shortcutEnabled = normalizeShortcutEnabled(value);
+    this.updateSourceAction();
+  }
+
+  openFromShortcut(): void {
+    if (!this.settings.enabled) throw new Error("请先在设置 → 划词翻译中启用划词翻译。");
+    if (!this.card.hidden) { this.card.focus({ preventScroll: true }); return; }
+    // Capture immediately: the selectionchange debounce may not have fired yet.
+    this.captureSelection();
+    if (!this.range || !this.rects().length) throw new Error("请先选中网页正文（最多 5,000 个字符）；输入框和编辑区中的文字不支持划词翻译。");
+    void this.lookup(this.settings.provider);
+  }
+
   dispose(): void {
     this.close(); this.disposed = true;
     this.host.remove();
@@ -171,7 +188,7 @@ export class SelectionTranslationController {
     if (event.key.startsWith("Arrow") || event.key === "Shift" || event.key === "Home" || event.key === "End") this.scheduleSelection();
   };
   private onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && !event.isComposing) this.close();
+    if (event.key === "Escape" && !event.isComposing && this.shortcutEnabled["dismiss-overlays"]) this.close();
   };
   private onScroll = (event: Event): void => { if (!this.owns(event)) this.close(); };
   private onResize = (): void => { this.close(); };
@@ -279,7 +296,7 @@ export class SelectionTranslationController {
   private updateSourceAction(): void {
     const action = isSingleDictionaryWord(this.word.value.trim()) ? "查词" : "翻译";
     this.submitSource.textContent = action;
-    this.submitSource.title = `${action}（Ctrl+Enter）`;
+    this.submitSource.title = this.shortcutEnabled["selection-submit"] ? `${action}（Ctrl+Enter）` : action;
   }
 
   private submitEditedText(): void {
@@ -371,7 +388,7 @@ export class SelectionTranslationController {
       line.append(label);
       if (pronunciation.audioUrl) {
         const button = document.createElement("button");
-        button.type = "button"; button.className = "speak"; button.textContent = "▶";
+        button.type = "button"; button.className = "speak"; button.innerHTML = uiIconMarkup("volume");
         button.setAttribute("aria-label", `播放${accent === "读音" ? "单词" : `${accent}式`}发音`);
         button.addEventListener("click", () => { void this.play(entry.provider, pronunciation.audioUrl!, button, version); });
         line.append(button);
@@ -442,20 +459,30 @@ export class SelectionTranslationController {
 
 let controller: SelectionTranslationController | undefined;
 
+export async function translateSelectedText(): Promise<void> {
+  const settings = await sendRuntimeRequest<ExtensionSettings>({ type: "GET_SETTINGS" });
+  const normalized = normalizeSelectionTranslation(settings.selectionTranslation);
+  if (controller) controller.update(normalized);
+  else controller = new SelectionTranslationController(normalized);
+  controller.updateShortcuts(settings.shortcutEnabled);
+  controller.openFromShortcut();
+}
+
 export function initSelectionTranslation(): void {
   if (typeof document === "undefined" || !chrome?.runtime?.id || controller) return;
   let revision = 0;
-  const apply = (settings: unknown) => {
-    const normalized = normalizeSelectionTranslation(settings);
+  const apply = (settings: Partial<ExtensionSettings> | undefined) => {
+    const normalized = normalizeSelectionTranslation(settings?.selectionTranslation);
     if (controller) controller.update(normalized);
     else controller = new SelectionTranslationController(normalized);
+    controller.updateShortcuts(settings?.shortcutEnabled);
   };
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[SETTINGS_KEY]) return;
     revision++;
-    apply((changes[SETTINGS_KEY].newValue as Partial<ExtensionSettings> | undefined)?.selectionTranslation);
+    apply(changes[SETTINGS_KEY].newValue as Partial<ExtensionSettings> | undefined);
   });
   void sendRuntimeRequest<ExtensionSettings>({ type: "GET_SETTINGS" }).then(settings => {
-    if (!revision) apply(settings.selectionTranslation);
+    if (!revision) apply(settings);
   }).catch(() => undefined);
 }

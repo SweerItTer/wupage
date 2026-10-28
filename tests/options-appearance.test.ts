@@ -115,6 +115,49 @@ describe("appearance editor", () => {
     query<HTMLButtonElement>("#save").click();
     await vi.waitFor(() => expect(stored.appearance?.customSchemes[0].colors).toMatchObject(updates));
   });
+
+  it("links the opacity slider and numeric field, retains the draft and saves without copying a palette", async () => {
+    await mount();
+    const range = query<HTMLInputElement>("#floatingOpacityRange");
+    const number = query<HTMLInputElement>("#floatingOpacityNumber");
+    expect(range.disabled).toBe(false); expect(range.value).toBe("100");
+    range.value = "35"; range.dispatchEvent(new Event("input"));
+    expect(number.value).toBe("35");
+    expect(document.documentElement.style.getPropertyValue("--wp-floating-opacity")).toBe("0.35");
+    number.value = "0"; number.dispatchEvent(new Event("input"));
+    expect(range.value).toBe("0");
+    number.value = "62"; number.dispatchEvent(new Event("input"));
+    expect(range.value).toBe("62");
+    expect(sendMessage.mock.calls.some(([request]) => request.type === "SAVE_SETTINGS")).toBe(false);
+    query<HTMLButtonElement>("[data-appearance-tone='dark']").click();
+    expect(query<HTMLInputElement>("#floatingOpacityNumber").value).toBe("62");
+    query<HTMLAnchorElement>("a[aria-controls='generalSettings']").click();
+    query<HTMLAnchorElement>("a[aria-controls='appearanceSettings']").click();
+    expect(query<HTMLInputElement>("#floatingOpacityRange").value).toBe("62");
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(stored.appearance?.floatingOpacity).toBe(62));
+    expect(stored.appearance?.customSchemes).toEqual([]);
+    query<HTMLButtonElement>("#restore").click();
+    await vi.waitFor(() => {
+      expect(stored.appearance?.floatingOpacity).toBe(100);
+      expect(query<HTMLInputElement>("#floatingOpacityNumber").value).toBe("100");
+    });
+  });
+
+  it("reveals an invalid opacity percentage when saving from another category and allows correction", async () => {
+    await mount();
+    const number = query<HTMLInputElement>("#floatingOpacityNumber");
+    number.value = "101"; number.dispatchEvent(new Event("input"));
+    query<HTMLAnchorElement>("a[aria-controls='generalSettings']").click();
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(query("#status").textContent).toContain("整数透明度"));
+    expect(query<HTMLElement>("#appearanceSettings").hidden).toBe(false);
+    expect(document.activeElement).toBe(number);
+    expect(sendMessage.mock.calls.some(([request]) => request.type === "SAVE_SETTINGS")).toBe(false);
+    number.value = "45"; number.dispatchEvent(new Event("input"));
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(stored.appearance?.floatingOpacity).toBe(45));
+  });
 });
 
 function query<T extends HTMLElement = HTMLElement>(selector: string): T {

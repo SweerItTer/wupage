@@ -2,7 +2,6 @@
 .image-feature[data-loading] .switch, .image-feature[data-loading] .setting-toggle-control { visibility: hidden; }
 .image-feature[data-loading] .switch, .image-feature[data-loading] .switch span,
 .image-feature[data-loading] .setting-toggle-control, .image-feature[data-loading] .setting-toggle-control::after { transition: none; }
-.general-toggles > .image-feature { grid-column: 1 / -1; }
 .setting-toggle:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .image-feature-row > .switch-row, .image-feature-row > .setting-toggle { flex: 1; min-width: 0; margin: 0; }
 .ocr-help { flex: 0 0 24px; display: flex; align-items: center; }
@@ -16,7 +15,7 @@ button.ocr-model-action { display: inline-flex; align-items: center; justify-con
 button.ocr-model-action:hover { background: var(--wp-selected, #e4eeeb); color: var(--wp-accent, #116466); }
 button.ocr-model-action[data-state="installed"]:hover { color: var(--wp-danger, #a62626); background: var(--wp-danger-soft, #fff0f0); }
 button.ocr-model-action:focus-visible { outline: 2px solid var(--wp-accent, #116466); outline-offset: 2px; }
-.ocr-model-action svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ocr-model-action svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .ocr-description, .ocr-model-status { margin: 5px 0 0; font-size: 12px; line-height: 1.6; color: var(--wp-muted, #526068); font-weight: 400; }
 .ocr-model-status[data-state="error"] { color: var(--wp-danger, #a62626); }
 .ocr-model-progress { display: block; width: 100%; height: 5px; margin: 6px 0; accent-color: var(--wp-accent, #116466); }

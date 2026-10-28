@@ -8,9 +8,14 @@ export function injectContentStyles(): void {
     .wupage-translation {
       box-sizing: border-box;
       max-width: 100%;
+      white-space: normal;
       overflow-wrap: break-word;
       word-break: break-word;
       pointer-events: none;
+    }
+
+    .wupage-context-translation .wupage-translation {
+      pointer-events: auto;
     }
 
     .wupage-translation[data-wupage-mode="block"] {
@@ -259,6 +264,7 @@ export function injectContentStyles(): void {
       place-items: center;
       color: var(--wp-floating-foreground, #ffffff);
       background: var(--wp-floating-background, #116466);
+      opacity: var(--wp-floating-opacity, 1);
       box-shadow: 0 8px 24px rgba(15, 35, 38, 0.22);
       appearance: none;
       cursor: pointer;
@@ -309,7 +315,7 @@ export function injectContentStyles(): void {
     #wupage-floating-ball.is-dragging {
       transition: none;
       cursor: grabbing;
-      opacity: 0.92;
+      opacity: calc(var(--wp-floating-opacity, 1) * 0.92);
       transform: none;
     }
 
@@ -336,9 +342,10 @@ export function injectContentStyles(): void {
       color-scheme: var(--wp-color-scheme, light);
       position: fixed !important;
       z-index: 2147483647;
-      display: block;
       box-sizing: border-box;
       width: 296px;
+      display: grid;
+      gap: 14px;
       max-width: calc(100vw - 16px);
       max-height: calc(100vh - 16px);
       overflow-y: auto;
@@ -410,9 +417,9 @@ export function injectContentStyles(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: calc(100% - 8px);
+      width: 100%;
       min-height: 40px;
-      margin: 4px;
+      margin: 0;
       border: 1px solid var(--wp-accent, #116466);
       color: var(--wp-on-accent, #ffffff);
       background: var(--wp-accent, #116466);
@@ -431,7 +438,13 @@ export function injectContentStyles(): void {
     }
 
     #wupage-floating-menu .wupage-menu-section {
-      padding: 4px;
+      padding: 0;
+    }
+
+    #wupage-floating-menu .wupage-menu-top {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
     }
 
     #wupage-floating-menu .wupage-menu-header {
@@ -439,16 +452,15 @@ export function injectContentStyles(): void {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 0 4px 8px;
+      padding: 0;
+      min-height: 28px;
     }
 
     #wupage-floating-menu .wupage-menu-header strong {
-      font: 700 15px/1.4 system-ui, sans-serif;
-      color: var(--wp-accent, #116466);
+      font: 700 15px/1.2 system-ui, sans-serif;
+      color: var(--wp-foreground, #172026);
     }
 
-    #wupage-floating-menu .wupage-menu-header button,
-    #wupage-floating-menu .wupage-menu-footer button,
     #wupage-floating-menu button[data-action="retranslate"] {
       width: auto;
       flex: 0 0 auto;
@@ -456,6 +468,20 @@ export function injectContentStyles(): void {
       padding: 0 6px;
       color: var(--wp-accent, #116466);
       font-size: 12px;
+    }
+
+    #wupage-floating-menu .wupage-menu-header button {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      min-height: 28px;
+      padding: 0;
+      color: var(--wp-muted, #526068);
+    }
+
+    #wupage-floating-menu .wupage-menu-header svg {
+      width: 19px;
+      height: 19px;
     }
 
     #wupage-floating-menu .wupage-field-label {
@@ -469,8 +495,8 @@ export function injectContentStyles(): void {
     #wupage-floating-menu .wupage-menu-field {
       all: initial;
       display: block;
-      margin: 4px;
-      padding: 4px 0;
+      margin: 0;
+      padding: 0;
       font: inherit;
     }
 
@@ -490,29 +516,36 @@ export function injectContentStyles(): void {
       display: none !important;
     }
 
-    #wupage-floating-menu .wupage-display-modes {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 3px;
-      padding: 3px;
-      border-radius: 8px;
-      background: var(--wp-soft, #eef2f1);
-    }
-
-    #wupage-floating-menu .wupage-display-modes button {
+    #wupage-floating-menu select[data-role="display-mode"] {
+      all: initial;
+      box-sizing: border-box;
+      display: block;
+      align-items: center;
+      width: 100%;
       min-width: 0;
-      padding: 0 3px;
-      text-align: center;
+      min-height: 34px;
+      padding: 0 32px 0 10px;
+      border: 1px solid var(--wp-border, #c9d1cf);
+      border-radius: 6px;
+      color: var(--wp-foreground, #172026);
+      background: var(--wp-surface, #ffffff);
+      font: inherit;
       font-size: 12px;
+      appearance: none;
+      background-image: var(--wp-select-arrow);
+      background-position: right 10px center;
+      background-size: 10px 10px;
+      background-repeat: no-repeat;
+      cursor: pointer;
     }
 
-    #wupage-floating-menu .wupage-display-modes button[aria-pressed="true"] {
-      background: var(--wp-surface, #ffffff);
-      box-shadow: 0 1px 3px rgba(15, 35, 38, 0.1);
+    #wupage-floating-menu select[data-role="display-mode"]:focus-visible {
+      outline: 2px solid var(--wp-accent, #116466);
+      outline-offset: 2px;
     }
 
     #wupage-floating-menu .wupage-translation-feedback {
-      padding: 4px 8px 6px;
+      padding: 0;
     }
 
     #wupage-floating-menu [data-role="translation-status"],
@@ -533,33 +566,20 @@ export function injectContentStyles(): void {
     }
 
     @media (any-hover: none) and (any-pointer: coarse) {
-      #wupage-floating-menu [data-action="paragraph-mode"],
       #wupage-floating-menu .wupage-menu-hint {
         display: none !important;
       }
     }
 
-    #wupage-floating-menu .wupage-menu-footer {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 4px;
-      padding: 0 4px;
-      color: var(--wp-muted, #647379);
-      font-size: 11px;
-    }
-
     #wupage-floating-menu .wupage-language-pair {
       all: initial;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+      display: flex;
       align-items: center;
       width: 100%;
       min-width: 0;
       margin: 0;
       padding: 0;
-      gap: 0;
+      gap: 6px;
       box-sizing: border-box;
       direction: ltr;
       font: 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -568,7 +588,8 @@ export function injectContentStyles(): void {
     #wupage-floating-menu .wupage-language-select {
       all: initial;
       position: relative;
-      display: block;
+      display: grid;
+      flex: 0 1 auto;
       box-sizing: border-box;
       float: none !important;
       width: auto !important;
@@ -586,7 +607,8 @@ export function injectContentStyles(): void {
     #wupage-floating-menu .wupage-language-select select {
       all: initial;
       display: block;
-      position: static !important;
+      position: absolute !important;
+      inset: 0 !important;
       width: 100% !important;
       min-width: 0 !important;
       max-width: none !important;
@@ -622,20 +644,21 @@ export function injectContentStyles(): void {
 
     #wupage-floating-menu .wupage-language-value {
       all: initial;
-      position: absolute !important;
+      position: relative !important;
       z-index: 1;
-      inset: 0 !important;
-      display: flex !important;
+      inset: auto !important;
+      display: block !important;
+      box-sizing: border-box;
       align-items: center !important;
-      justify-content: center !important;
+      justify-content: flex-start !important;
       min-width: 0 !important;
       margin: 0 !important;
-      padding: 0 24px 0 8px !important;
+      padding: 0 21px 0 8px !important;
       overflow: hidden !important;
       color: var(--wp-foreground, #26343a);
-      font: 500 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+      font: 500 13px/40px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
       letter-spacing: normal !important;
-      text-align: center !important;
+      text-align: left !important;
       text-overflow: ellipsis !important;
       text-transform: none !important;
       text-shadow: none !important;
@@ -652,32 +675,36 @@ export function injectContentStyles(): void {
 
     #wupage-floating-menu .wupage-language-chevron {
       all: initial;
+      display: flex;
       position: absolute !important;
       z-index: 2;
       pointer-events: none;
-      right: 10px !important;
+      right: 7px !important;
       top: 50% !important;
-      width: 5px !important;
-      height: 5px !important;
+      width: 10px !important;
+      height: 10px !important;
       margin: 0 !important;
       padding: 0 !important;
-      border-right: 2px solid var(--wp-muted, #7d898e);
-      border-bottom: 2px solid var(--wp-muted, #7d898e);
-      box-sizing: content-box;
-      transform: translateY(-65%) rotate(45deg) !important;
+      color: var(--wp-muted, #7d898e);
+      transform: translateY(-50%) !important;
     }
+
+    #wupage-floating-menu .wupage-language-chevron svg { width: 10px; height: 10px; }
+    #wupage-floating-menu .wupage-language-direction svg { width: 14px; height: 14px; }
+    #wupage-floating-menu .wupage-language-add-site svg { width: 12px; height: 12px; }
 
     #wupage-floating-menu .wupage-language-direction {
       all: initial;
+      flex: 0 0 18px;
       position: static !important;
-      width: 24px !important;
+      width: 18px !important;
       height: 40px !important;
       display: grid !important;
       place-items: center !important;
       align-self: center !important;
       margin: 0 !important;
       padding: 0 !important;
-      color: var(--wp-accent, #116466);
+      color: var(--wp-muted, #7a878b);
       font: 17px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
       text-align: center !important;
       transform: none !important;
@@ -711,44 +738,94 @@ export function injectContentStyles(): void {
       background: rgba(31, 42, 46, 0.1);
     }
 
-    #wupage-floating-menu .wupage-switch-row {
+    #wupage-floating-menu .wupage-feature-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+    }
+
+    #wupage-floating-menu .wupage-feature-button {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       gap: 10px;
+      min-width: 0;
+      min-height: 40px;
+      padding: 0 8px;
+      border: 2px dashed var(--wp-border, #c9d1cf);
+      border-radius: 8px;
+      background: var(--wp-surface, #ffffff);
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
     }
 
-    #wupage-floating-menu .wupage-switch-row[aria-busy="true"] { opacity: 1; cursor: wait; }
+    #wupage-floating-menu .wupage-feature-button[aria-busy="true"] { opacity: 1; cursor: wait; }
 
-    #wupage-floating-menu .wupage-switch {
+    #wupage-floating-menu .wupage-feature-button[aria-pressed="true"] {
+      color: var(--wp-accent, #116466);
+      border: 1px solid var(--wp-accent, #116466);
+      background: var(--wp-selected, #e4eeeb);
+      box-shadow: inset 0 0 0 1px var(--wp-accent, #116466);
+    }
+
+    #wupage-floating-menu .wupage-feature-button:hover {
+      border-color: var(--wp-accent, #116466);
+      background: var(--wp-soft, #eef2f1);
+    }
+
+    #wupage-floating-menu .wupage-feature-button[aria-pressed="true"]:hover {
+      background: var(--wp-selected, #e4eeeb);
+    }
+
+    #wupage-floating-menu .wupage-feature-button:focus-visible {
+      outline: 2px solid var(--wp-accent, #116466);
+      outline-offset: 2px;
+    }
+
+    #wupage-floating-menu .wupage-feature-indicator {
       position: relative;
       flex: 0 0 auto;
-      width: 32px;
-      height: 24px;
-      border-radius: 8px;
-      background: var(--wp-border, #d5dde0);
-      transition: background 160ms ease;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      visibility: hidden;
+      pointer-events: none;
     }
 
-    #wupage-floating-menu .wupage-switch span {
+    #wupage-floating-menu .wupage-feature-indicator::after {
+      content: "";
       position: absolute;
-      left: 3px;
-      top: 3px;
-      width: 18px;
-      height: 18px;
-      border-radius: 6px;
-      background: var(--wp-surface, #ffffff);
-      box-shadow: 0 1px 3px rgba(15, 35, 38, 0.24);
-      transition: transform 160ms ease;
+      inset: -4px;
+      box-sizing: border-box;
+      border: 1px dashed currentColor;
+      border-radius: 50%;
     }
 
-    #wupage-floating-menu .wupage-switch-row[aria-pressed="true"] .wupage-switch {
-      background: var(--wp-accent, #116466);
+    #wupage-floating-menu .wupage-feature-button[aria-pressed="true"] .wupage-feature-indicator {
+      visibility: visible;
     }
 
-    #wupage-floating-menu .wupage-switch-row[aria-pressed="true"] .wupage-switch span {
-      transform: translateX(8px);
-    }
+    #wupage-floating-menu .wupage-language-auto { width: 38px; min-height: 36px; padding: 0 4px; font-size: 11px; }
+    #wupage-floating-menu .wupage-language-automatic { display: flex; flex: 0 0 auto; align-items: center; margin-left: auto; gap: 6px; }
+    #wupage-floating-menu .wupage-language-add-site { display: grid; place-items: center; width: 22px; min-height: 28px; padding: 0; border: 1px solid var(--wp-border, #c9d1cf); color: var(--wp-accent, #116466); background: var(--wp-soft, #eef2f1); font-size: 18px; line-height: 1; text-align: center; }
+    #wupage-floating-menu .wupage-language-add-site:disabled:not([aria-busy="true"]) { cursor: default; }
+    #wupage-floating-menu .image-feature-row { display: flex; align-items: center; gap: 2px; min-height: 40px; padding-right: 3px; border: 2px dashed var(--wp-border, #c9d1cf); border-radius: 8px; background: var(--wp-surface, #fff); }
+    #wupage-floating-menu .image-feature-row:has([aria-pressed="true"]) { border: 1px solid var(--wp-accent, #116466); box-shadow: inset 0 0 0 1px var(--wp-accent, #116466); background: var(--wp-selected, #e4eeeb); }
+    #wupage-floating-menu .image-feature-row .wupage-feature-button { flex: 1; align-self: stretch; min-height: 36px; padding: 0 3px; border: 0; background: transparent; box-shadow: none; }
+    #wupage-floating-menu .image-feature-row .wupage-feature-indicator { display: none; }
+    #wupage-floating-menu .image-feature[data-loading] .wupage-feature-button { visibility: hidden; }
+    #wupage-floating-menu .ocr-help-slot, #wupage-floating-menu .ocr-help { display: flex; align-items: center; }
+    #wupage-floating-menu .ocr-help-trigger { display: grid; place-items: center; width: 16px; min-height: 16px; height: 16px; padding: 0; border: 1px solid var(--wp-border, #c9d1cf); border-radius: 50%; font: 600 10px/1 system-ui; color: var(--wp-muted, #526068); cursor: help; }
+    #wupage-floating-menu .ocr-model-action { display: grid; place-items: center; flex: 0 0 18px; width: 18px; min-height: 28px; padding: 1px; color: var(--wp-muted, #526068); }
+    #wupage-floating-menu .ocr-model-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    #wupage-floating-menu .ocr-help-panel { position: fixed; z-index: 2147483647; width: 260px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; padding: 12px 14px; border: 1px solid var(--wp-border, #c9d1cf); border-radius: 10px; background: var(--wp-surface, #fff); box-shadow: 0 6px 24px #17203326; }
+    #wupage-floating-menu .ocr-description, #wupage-floating-menu .ocr-model-status { margin: 5px 0 0; font: 12px/1.6 system-ui; color: var(--wp-muted, #526068); white-space: normal; overflow-wrap: anywhere; }
+    #wupage-floating-menu .ocr-help-panel .ocr-description { margin-top: 0; }
+    #wupage-floating-menu .ocr-model-status[data-state="error"] { color: var(--wp-danger, #b13e36); }
+    #wupage-floating-menu .ocr-model-progress { display: block; width: 100%; height: 5px; margin: 6px 0; accent-color: var(--wp-accent, #116466); }
 
     .wupage-paragraph-active {
       outline: 1px dashed color-mix(in srgb, var(--wp-paragraph-highlight, #116466) 45%, transparent);
@@ -930,7 +1007,20 @@ export function injectContentStyles(): void {
       display: none;
     }
 
+    #wupage-debug-panel .wupage-debug-task-title::marker { content: ""; }
+    #wupage-debug-panel .wupage-debug-task-title::before {
+      content: "";
+      flex: 0 0 10px;
+      width: 10px;
+      height: 10px;
+      background-color: currentColor;
+      mask: var(--wp-disclosure-icon) center / contain no-repeat;
+      transform: rotate(-90deg);
+    }
+    #wupage-debug-panel details[open] > .wupage-debug-task-title::before { transform: none; }
+
     #wupage-debug-panel .wupage-debug-task-title strong {
+      flex: 1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;

@@ -201,6 +201,9 @@ const YOUTUBE_DESCRIPTION_SELECTOR = [
   "ytd-expandable-video-description-body-renderer .ytAttributedStringHost",
   "#description yt-formatted-string.content"
 ].join(",");
+// Comment bodies use inline attributed strings in both YouTube renderers.
+// Their height/display describes the source text, not a compact UI label.
+const YOUTUBE_COMMENT_SELECTOR = "ytd-comment-view-model #content-text, ytd-comment-renderer #content-text";
 // Reddit distributes comment metadata through named shadow-DOM slots. A
 // translation added to that wrapper can become an unslotted avatar-column item.
 const REDDIT_METADATA_SELECTOR = [
@@ -248,7 +251,8 @@ const PARAGRAPH_SELECTOR = [
   ".markdown-body > p",
   ".comment-body p",
   X_POST_TEXT_SELECTOR,
-  YOUTUBE_DESCRIPTION_SELECTOR
+  YOUTUBE_DESCRIPTION_SELECTOR,
+  YOUTUBE_COMMENT_SELECTOR
 ].join(",");
 
 export function collectTextSegments(translateCodeComments = true): TextSegment[] {
@@ -1224,12 +1228,15 @@ function groupTextSegments(
     if (
       groupNodes.length < 2 &&
       text === nodeText &&
-      !block.matches(`summary, label, li, ${X_POST_TEXT_SELECTOR}`)
+      !block.matches(`summary, label, li, ${X_POST_TEXT_SELECTOR}, ${YOUTUBE_COMMENT_SELECTOR}`)
     ) continue;
     if (!text) continue;
     const authoredLines = isAuthoredLineTextBlock(block);
     const sourceNodes = completeGroupedSourceNodes(block, groupNodes, visibility, trackedSourceNodes);
-    trackedGroups.push({ id, nodes: sourceNodes, block, mode: authoredLines ? "block" : getRenderMode(block), authoredLines });
+    trackedGroups.push({
+      id, nodes: sourceNodes, block, mode: authoredLines ? "block" : getRenderMode(block), authoredLines,
+      preserveWhitespace: block.matches(YOUTUBE_COMMENT_SELECTOR)
+    });
     if (tokens.length) protectedTokensById.set(id, tokens);
     groupedSegments.push({ id, text, element: block });
     groupNodes.forEach((tracked) => standalone.delete(tracked.id));
@@ -1420,6 +1427,8 @@ function findGroupingBlock(element: Element | null): Element | null {
   if (!element) return null;
   const description = element.closest(YOUTUBE_DESCRIPTION_SELECTOR);
   if (description) return element.closest("a") ? null : description;
+  const comment = element.closest(YOUTUBE_COMMENT_SELECTOR);
+  if (comment) return comment;
   const compactNavigationTarget = getCompactNavigationTarget(element);
   if (compactNavigationTarget) return compactNavigationTarget;
   const compactControlTarget = getCompactControlTarget(element);
@@ -1729,7 +1738,7 @@ function insertBlockTranslation(block: Element, translation: Element): void {
     block.append(translation);
     return;
   }
-  if (block.matches("li")) {
+  if (block.matches(`li, ${YOUTUBE_COMMENT_SELECTOR}`)) {
     block.append(translation);
     return;
   }
@@ -1778,6 +1787,7 @@ function findHeadingAnchor(block: Element): Element | null {
 function getRenderMode(element: Element | null): RenderMode {
   if (!element) return "inline";
   if (element.matches(X_POST_TEXT_SELECTOR)) return "block";
+  if (element.matches(YOUTUBE_COMMENT_SELECTOR)) return "block";
   if (element.matches("label")) return isChoiceLabel(element) ? "inline" : "block";
   if (element.matches("summary")) return "inline";
   if (isCompactNavigationText(element)) return "inline";
@@ -1817,6 +1827,7 @@ function isCompactUiElement(element: Element): boolean {
 function isLikelyUiToken(text: string, element: Element | null): boolean {
   if (!element) return false;
   if (element.closest(YOUTUBE_DESCRIPTION_SELECTOR)) return false;
+  if (element.closest(YOUTUBE_COMMENT_SELECTOR)) return false;
   if (isCompactNavigationText(element)) return false;
   if (isCompactControlText(element)) return false;
   if (text.length > 28) return false;

@@ -172,4 +172,29 @@ describe("automatic page translation", () => {
     document.querySelector("p")!.textContent += " Changed."; await settle();
     expect(stop).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled();
   });
+
+  it("gives exclusions priority over site and language rules and resumes after allowing the site", async () => {
+    mount({ nonTargetLanguage: true, customSites: [{ id: "site", pattern: "example.com", enabled: true }], excludedSites: ["example.com"] });
+    await settle();
+    expect(start).not.toHaveBeenCalled(); expect(detect).not.toHaveBeenCalled();
+    storage({ "wupage.settings": { newValue: { ...settings, autoTranslation: { ...settings.autoTranslation, excludedSites: [] } } } }, "local");
+    await settle();
+    expect(start).toHaveBeenCalledTimes(1);
+    storage({ "wupage.settings": { newValue: settings } }, "local");
+    await settle();
+    expect(stop).toHaveBeenCalledTimes(1);
+    document.querySelector("p")!.textContent += " Updated content.";
+    await settle();
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards pending language detection when the current website is excluded", async () => {
+    let release!: (value: { languages: Array<{ language: string; percentage: number }> }) => void;
+    detect.mockReturnValueOnce(new Promise(resolve => { release = resolve; }));
+    mount({ nonTargetLanguage: true }); await settle();
+    storage({ "wupage.settings": { newValue: { ...settings, autoTranslation: { ...settings.autoTranslation, excludedSites: ["example.com"] } } } }, "local");
+    release({ languages: [{ language: "en", percentage: 99 }] });
+    await settle();
+    expect(start).not.toHaveBeenCalled();
+  });
 });

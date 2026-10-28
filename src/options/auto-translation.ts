@@ -1,5 +1,6 @@
 import { AUTO_TRANSLATION_PRESETS, normalizeAutoTranslation, normalizeSitePattern, setAutoTranslationEnabled } from "../shared/auto-translation";
 import type { AutoTranslationSettings, AutoTranslationSite } from "../shared/types";
+import { uiIconMarkup } from "../shared/ui-icons";
 
 export function setupAutoTranslationControls(
   root: HTMLElement,
@@ -18,6 +19,26 @@ export function setupAutoTranslationControls(
   let sites: Array<AutoTranslationSite & { preset?: string }> = [];
   const controls = new Map<string, HTMLInputElement>();
   let defaultLanguageRule = false;
+  let excludedSites: string[] = [];
+
+  function renderExcludedSites(): void {
+    const group = root.querySelector<HTMLElement>("#autoTranslateExcluded");
+    const list = root.querySelector<HTMLElement>("#autoTranslateExcludedSites");
+    if (!group || !list) return;
+    group.hidden = excludedSites.length === 0;
+    list.replaceChildren();
+    for (const site of excludedSites) {
+      const row = document.createElement("li");
+      const label = document.createElement("span"); label.textContent = site; label.title = site;
+      const remove = document.createElement("button"); remove.type = "button"; remove.innerHTML = uiIconMarkup("cross");
+      remove.title = `取消排除 ${site}`; remove.setAttribute("aria-label", remove.title);
+      remove.addEventListener("click", () => {
+        excludedSites = excludedSites.filter(value => value !== site);
+        renderExcludedSites();
+      });
+      row.append(label, remove); list.append(row);
+    }
+  }
 
   function updateLanguageOption(): void {
     foreignOption.hidden = !enabled.checked;
@@ -66,7 +87,7 @@ export function setupAutoTranslationControls(
       });
       controls.set(site.id, pattern);
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary auto-site-remove";
-      remove.textContent = "−"; remove.title = "删除站点"; remove.setAttribute("aria-label", `删除站点 ${site.pattern || "未填写"}`);
+      remove.innerHTML = uiIconMarkup("trash"); remove.title = "删除站点"; remove.setAttribute("aria-label", `删除站点 ${site.pattern || "未填写"}`);
       remove.addEventListener("click", () => {
         syncDrafts();
         const index = sites.indexOf(site);
@@ -77,7 +98,7 @@ export function setupAutoTranslationControls(
       editor.append(caption, pattern); row.append(checkbox, editor, remove); list.append(row);
     });
     const addRow = document.createElement("li"); addRow.className = "auto-site-add-row";
-    const add = document.createElement("button"); add.id = "addAutoTranslateSite"; add.type = "button"; add.textContent = "+";
+    const add = document.createElement("button"); add.id = "addAutoTranslateSite"; add.type = "button"; add.innerHTML = uiIconMarkup("plus");
     add.title = "添加站点"; add.setAttribute("aria-label", "添加站点");
     add.addEventListener("click", () => {
       syncDrafts();
@@ -90,6 +111,8 @@ export function setupAutoTranslationControls(
   return {
     render(value): void {
       const settings = normalizeAutoTranslation(value);
+      excludedSites = [...(settings.excludedSites ?? [])];
+      renderExcludedSites();
       enabled.checked = settings.enabled; foreign.checked = settings.nonTargetLanguage;
       defaultLanguageRule = !settings.enabled && setAutoTranslationEnabled(settings, true).nonTargetLanguage;
       updateLanguageOption();
@@ -127,7 +150,8 @@ export function setupAutoTranslationControls(
       return { enabled: enabled.checked, nonTargetLanguage: foreign.checked,
         presetSites: normalized.filter(site => site.preset === site.pattern && site.enabled).map(site => site.pattern),
         customSites: normalized.filter(site => site.preset !== site.pattern).map(({ id, pattern, enabled }) => ({ id, pattern, enabled })),
-        ...(removed.length ? { removedPresetSites: removed } : {}) };
+        ...(removed.length ? { removedPresetSites: removed } : {}),
+        ...(excludedSites.length ? { excludedSites: [...excludedSites] } : {}) };
     }
   };
 }

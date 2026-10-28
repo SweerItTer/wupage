@@ -19,3 +19,29 @@
 }
 
 ::selection { background: var(--wp-selected); color: var(--wp-foreground); }
+
+[data-wupage-icon] { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; vertical-align: middle; pointer-events: none; }
+
+/* Language pairs already have a separate SVG overlay. Keep native select behavior. */
+select:not([multiple]):not([size]):not(.language-select select) {
+  appearance: none;
+  padding-inline-end: 32px;
+  background-image: var(--wp-select-arrow);
+  background-position: right 12px center;
+  background-size: 10px 10px;
+  background-repeat: no-repeat;
+}
+
+summary { display: flex; align-items: center; gap: 8px; list-style: none; }
+summary::marker { content: ""; }
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: "";
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  background-color: currentColor;
+  mask: var(--wp-disclosure-icon) center / contain no-repeat;
+  transform: rotate(-90deg);
+}
+details[open] > summary::before { transform: none; }

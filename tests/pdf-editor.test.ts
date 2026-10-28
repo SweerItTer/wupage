@@ -190,7 +190,7 @@ describe("editable PDF translation blocks", () => {
 
     const editor = block.querySelector<HTMLElement>(".translation-block-text")!;
     const moveHandle = block.querySelector<HTMLButtonElement>(".translation-block-move")!;
-    expect(moveHandle.textContent).toBe("✥");
+    expect(moveHandle.querySelector("svg")?.dataset.icon).toBe("cursor-move");
     expect(moveHandle.getAttribute("aria-label")).toBe("移动译文块");
     expect(editor.contentEditable).toBe("true");
     editor.textContent = "人工修订后的译文";

@@ -51,9 +51,6 @@ export function setupAppearanceControls(root: HTMLElement): {
     query<HTMLElement>("#customSchemeActions").hidden = !editable;
     name.value = editable ? scheme.name : "";
     name.removeAttribute("aria-invalid");
-    query<HTMLElement>("#appearanceSchemeHint").textContent = editable
-      ? "调整颜色后即时预览，点击页面底部「保存」后生效。"
-      : "内置方案可直接使用，复制后可编辑颜色和名称。";
     duplicate.disabled = draft.customSchemes.length >= 32;
     duplicate.title = duplicate.disabled ? "最多保存 32 个自定义方案" : "复制当前方案并编辑";
     for (const button of root.querySelectorAll<HTMLButtonElement>("[data-appearance-tone]")) {
@@ -78,10 +75,14 @@ export function setupAppearanceControls(root: HTMLElement): {
         swatch.style.background = scheme.colors[key]; swatches.append(swatch);
       }
       summary.append(swatches);
-      const description = document.createElement("p");
-      description.className = "field-description"; description.textContent = group.description;
       const grid = document.createElement("div"); grid.className = "appearance-color-grid";
-      details.append(summary, description, grid); colors.append(details); groups.set(group.id, grid);
+      details.append(summary);
+      if (group.id !== "floating" && group.id !== "translation") {
+        const description = document.createElement("p");
+        description.className = "field-description"; description.textContent = group.description;
+        details.append(description);
+      }
+      details.append(grid); colors.append(details); groups.set(group.id, grid);
     }
     for (const { key, label, group } of COLOR_FIELDS) {
       const row = document.createElement("div");
@@ -112,6 +113,36 @@ export function setupAppearanceControls(root: HTMLElement): {
       });
       row.append(text, picker, hex); groups.get(group)!.append(row);
     }
+    const opacityRow = document.createElement("div"); opacityRow.className = "appearance-opacity-row";
+    const opacityLabel = document.createElement("label"); opacityLabel.htmlFor = "floatingOpacityRange"; opacityLabel.textContent = "透明度";
+    const opacityRange = document.createElement("input");
+    opacityRange.type = "range"; opacityRange.id = opacityLabel.htmlFor;
+    opacityRange.min = "0"; opacityRange.max = "100"; opacityRange.step = "1"; opacityRange.value = String(draft.floatingOpacity);
+    opacityRange.title = "数值越低越透明，100% 为完全不透明";
+    const opacityValue = document.createElement("span"); opacityValue.className = "appearance-opacity-value";
+    const opacityNumber = document.createElement("input");
+    opacityNumber.type = "number"; opacityNumber.id = "floatingOpacityNumber";
+    opacityNumber.min = "0"; opacityNumber.max = "100"; opacityNumber.step = "1"; opacityNumber.value = opacityRange.value;
+    opacityNumber.setAttribute("aria-label", "悬浮球透明度百分比");
+    const percent = document.createElement("span"); percent.textContent = "%"; percent.setAttribute("aria-hidden", "true");
+    opacityRange.setAttribute("aria-valuetext", `${draft.floatingOpacity}%`);
+    opacityRange.addEventListener("input", () => {
+      draft.floatingOpacity = Number(opacityRange.value);
+      opacityNumber.value = opacityRange.value; opacityNumber.removeAttribute("aria-invalid");
+      opacityRange.setAttribute("aria-valuetext", `${draft.floatingOpacity}%`);
+      status.textContent = ""; paint();
+    });
+    opacityNumber.addEventListener("input", () => {
+      const value = opacityNumber.valueAsNumber;
+      const valid = Number.isInteger(value) && value >= 0 && value <= 100;
+      opacityNumber.setAttribute("aria-invalid", String(!valid));
+      if (!valid) return;
+      draft.floatingOpacity = value; opacityRange.value = String(value);
+      opacityRange.setAttribute("aria-valuetext", `${value}%`);
+      status.textContent = ""; paint();
+    });
+    opacityValue.append(opacityNumber, percent); opacityRow.append(opacityLabel, opacityRange, opacityValue);
+    groups.get("floating")!.append(opacityRow);
     paint();
   }
 
@@ -186,7 +217,8 @@ export function setupAppearanceControls(root: HTMLElement): {
         const group = invalid.closest("details");
         if (group) group.open = true;
         invalid.focus();
-        throw new Error(invalid === name ? "请填写配色方案名称。" : "请输入完整的十六进制颜色，例如 #116466。");
+        throw new Error(invalid === name ? "请填写配色方案名称。" : invalid.id === "floatingOpacityNumber"
+          ? "请输入 0 到 100 之间的整数透明度。" : "请输入完整的十六进制颜色，例如 #116466。");
       }
       return normalizeAppearance(draft);
     }

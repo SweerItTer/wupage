@@ -8,58 +8,62 @@
   </head>
   <body>
     <main class="popup">
-      <header>
-        <h1>WuPage</h1>
-        <button id="openOptions" type="button" title="打开设置">设置</button>
-      </header>
-      <div class="language-field">
-        <span class="field-label">翻译语言</span>
-        <div class="language-pair">
-          <label class="language-select">
-            <span class="visually-hidden">源语言</span>
-            <select id="sourceLang"></select>
-            <span class="language-chevron" aria-hidden="true"></span>
-          </label>
-          <span class="language-direction" aria-hidden="true">→</span>
-          <label class="language-select">
-            <span class="visually-hidden">目标语言</span>
-            <select id="targetLang"></select>
-            <span class="language-chevron" aria-hidden="true"></span>
-          </label>
+      <div class="popup-top">
+        <header>
+          <h1>WuPage</h1>
+          <button id="openOptions" type="button" title="打开设置" aria-label="打开设置"><span data-wupage-icon="settings" aria-hidden="true"></span></button>
+        </header>
+        <div class="language-field">
+          <div class="language-pair">
+            <label class="language-select">
+              <span class="visually-hidden">源语言</span>
+              <select id="sourceLang"></select>
+              <span class="language-value" aria-hidden="true">自动检测</span>
+              <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
+            </label>
+            <span class="language-direction" aria-hidden="true" data-wupage-icon="arrow-right"></span>
+            <label class="language-select">
+              <span class="visually-hidden">目标语言</span>
+              <select id="targetLang"></select>
+              <span class="language-value" aria-hidden="true">中文</span>
+              <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
+            </label>
+            <div class="language-automatic">
+              <button id="autoTranslation" type="button" class="feature-button language-auto" data-loading disabled aria-label="自动翻译" title="按站点或页面语言规则自动翻译">自动</button>
+              <button id="addAutoTranslationSite" type="button" class="language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表"><span data-wupage-icon="plus" aria-hidden="true"></span></button>
+            </div>
+          </div>
         </div>
+        <label>
+          翻译服务
+          <select id="provider"></select>
+        </label>
       </div>
       <label>
-        翻译服务
-        <select id="provider"></select>
+        翻译模式
+        <select id="translationDisplayMode" aria-describedby="paragraphModeHint" disabled></select>
+        <span id="paragraphModeHint" class="field-description" hidden>按住 Ctrl 点击段落翻译；再次点击恢复原文。</span>
       </label>
-      <label>
-        显示模式
-        <select id="translationDisplayMode"></select>
-      </label>
-      <div class="feature-toggles">
-        <button id="autoTranslation" type="button" class="switch-row" data-loading disabled title="按站点或页面语言规则自动翻译">
-          <span>自动翻译</span>
-          <span class="switch" aria-hidden="true"><span></span></span>
+      <div class="feature-toggles" role="group" aria-label="翻译功能">
+        <button id="contextMenuTranslation" type="button" class="feature-button" disabled title="右键点击正文段落，通过菜单翻译或恢复原文">
+          <span>右键翻译</span>
+          <span class="feature-indicator" aria-hidden="true"></span>
         </button>
-        <div class="toggle-pair">
-          <button id="paragraphMode" type="button" class="switch-row" aria-pressed="false">
-            <span>段落模式</span>
-            <span class="switch" aria-hidden="true"><span></span></span>
-          </button>
-          <button id="floatingBall" type="button" class="switch-row" aria-pressed="true">
-            <span>悬浮球</span>
-            <span class="switch" aria-hidden="true"><span></span></span>
-          </button>
-        </div>
+        <button id="floatingBall" type="button" class="feature-button" disabled>
+          <span>悬浮球</span>
+          <span class="feature-indicator" aria-hidden="true"></span>
+        </button>
+        <button id="selectionTranslation" type="button" class="feature-button" disabled title="选中文字后显示查词或翻译入口">
+          <span>划词翻译</span>
+          <span class="feature-indicator" aria-hidden="true"></span>
+        </button>
         <div class="image-feature" data-loading aria-busy="true">
           <div class="image-feature-row">
-            <div class="image-toggle-card">
-              <label id="imageTranslationLabel" for="imageTranslation">图片翻译</label>
-              <div class="ocr-help-slot"></div>
-              <button id="imageTranslation" type="button" class="switch-row image-toggle-switch" disabled aria-labelledby="imageTranslationLabel" aria-describedby="ocrDescription ocrModelStatus" title="开启后，点击图片旁的按钮翻译并覆盖原文">
-                <span class="switch" aria-hidden="true"><span></span></span>
-              </button>
-            </div>
+            <button id="imageTranslation" type="button" class="feature-button" disabled aria-describedby="ocrDescription ocrModelStatus" title="开启后，点击图片旁的按钮翻译并覆盖原文">
+              <span>图片翻译</span>
+              <span class="feature-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="ocr-help-slot"></div>
             <button id="ocrModelAction" type="button" class="ocr-model-action" aria-label="安装 OCR 模型" disabled></button>
           </div>
           <p id="ocrDescription" class="ocr-description"></p>
@@ -90,10 +94,7 @@
           <span>GitHub</span>
         </button>
         <button id="openWebsite" type="button" class="footer-link">
-          <svg class="globe-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="9"></circle>
-            <path d="M3 12h18M12 3c2.4 2.46 3.6 5.46 3.6 9s-1.2 6.54-3.6 9c-2.4-2.46-3.6-5.46-3.6-9S9.6 5.46 12 3Z"></path>
-          </svg>
+          <span data-wupage-icon="internet" aria-hidden="true"></span>
           <span>官网</span>
         </button>
       </div>

@@ -84,6 +84,22 @@ describe("settings category navigation", () => {
     await vi.waitFor(() => expect(query<HTMLElement>("#autoTranslationSettings").hidden).toBe(false));
   });
 
+  it("retains shortcut drafts across categories, saves them in-page and reloads them", async () => {
+    await mount(); navigate("shortcutSettings");
+    const input = query<HTMLInputElement>("[data-command='toggle-page-translation']");
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "J", code: "KeyJ", altKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    query<HTMLButtonElement>("[data-shortcut-toggle='toggle-page-translation']").click();
+    navigate("generalSettings"); navigate("shortcutSettings");
+    expect(input.value).toBe("Alt＋Shift＋J");
+    expect(sendMessage.mock.calls.some(([request]) => request.type === "SAVE_SETTINGS")).toBe(false);
+    query<HTMLButtonElement>("#save").click();
+    await vi.waitFor(() => expect(stored.shortcuts?.["toggle-page-translation"]).toBe("Alt+Shift+J"));
+    expect(stored.shortcutEnabled?.["toggle-page-translation"]).toBe(false);
+    expect(location.hash).toBe("#shortcutSettings");
+    expect(document.querySelector("#manageShortcuts")).toBeNull();
+  });
+
   it("reveals and focuses an invalid site rule when saving another category", async () => {
     await mount();
     navigate("autoTranslationSettings");

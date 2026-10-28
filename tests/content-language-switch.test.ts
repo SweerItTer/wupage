@@ -83,7 +83,10 @@ describe("saved language changes on an active content page", () => {
       i18n: { detectLanguage },
       storage: {
         local: { get: vi.fn(async () => ({})), set: vi.fn(async () => undefined) },
-        onChanged: { addListener: (listener: StorageListener) => storageListeners.push(listener) }
+        onChanged: {
+          addListener: (listener: StorageListener) => storageListeners.push(listener),
+          removeListener: (listener: StorageListener) => { storageListeners = storageListeners.filter(entry => entry !== listener); }
+        }
       }
     });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });

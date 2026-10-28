@@ -1,8 +1,11 @@
 import type { ExtensionSettings } from "./types";
 import { DEFAULT_SELECTION_TRANSLATION } from "./dictionary";
 import { DEFAULT_APPEARANCE } from "./appearance";
+import { DEFAULT_SHORTCUTS, DEFAULT_SHORTCUT_ENABLED } from "./shortcuts";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
+  shortcuts: { ...DEFAULT_SHORTCUTS },
+  shortcutEnabled: { ...DEFAULT_SHORTCUT_ENABLED },
   appearance: { ...DEFAULT_APPEARANCE, customSchemes: [] },
   selectionTranslation: { ...DEFAULT_SELECTION_TRANSLATION },
   autoTranslation: { enabled: false, nonTargetLanguage: false, presetSites: [], customSites: [] },
@@ -14,6 +17,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   pdfTranslationPageRadius: 5,
   cacheEnabled: true,
   floatingBallEnabled: true,
+  contextMenuTranslationEnabled: false,
   imageTranslationEnabled: false,
   translateCodeComments: true,
   translationDisplayMode: "bilingual",

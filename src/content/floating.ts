@@ -1,7 +1,7 @@
+import { uiIconMarkup } from "../shared/ui-icons";
 import type {
   ExtensionSettings,
   RuntimeRequest,
-  TranslateBatchResponse,
   TranslationDisplayMode,
   TranslationDebugSnapshot,
   TranslationDebugTask
@@ -9,30 +9,28 @@ import type {
 import { sendRuntimeRequest } from "./runtime";
 import { localProviderNotice } from "../shared/local-notice";
 import { enhanceProviderSelect } from "../shared/provider-picker";
-import { normalizeAutoTranslation, setAutoTranslationEnabled } from "../shared/auto-translation";
+import { addAutoTranslationWebsite, currentWebsitePattern, excludeAutoTranslationWebsite, hasAutoTranslationWebsite, normalizeAutoTranslation, setAutoTranslationEnabled } from "../shared/auto-translation";
+import { normalizeSelectionTranslation } from "../shared/dictionary";
+import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control-core";
 import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 import { ProviderError } from "../shared/errors";
 import {
-  clearTranslationsIn,
-  collectParagraphTextSegments,
   findTranslatableParagraph,
-  hasPageTranslations,
-  hasTranslationsIn,
-  renderTranslationPlaceholders,
-  renderTranslations
+  hasPageTranslations
 } from "./dom";
 import {
   hidePageTranslation,
-  getPageTranslationDisplayMode,
   getPageTranslationState,
   loadPageTranslationSettings,
   setPageTranslationDisplayMode,
   startPageTranslation,
   subscribePageTranslationState
 } from "./page-translation";
-import { buildTranslationContext } from "./translation-context";
 import { SETTINGS_KEY } from "../shared/defaults";
 import { TRANSLATION_DISPLAY_MODES } from "../shared/display-modes";
+import { translateParagraph } from "./paragraph-translation";
+import { normalizeShortcutEnabled } from "../shared/shortcuts";
+import { createSettingsSnapshot } from "../shared/settings-snapshot";
 
 const FLOATING_ID = "wupage-floating-ball";
 const FLOATING_HITBOX_ID = "wupage-floating-hitbox";
@@ -86,9 +84,12 @@ let menuErrorCode: string | undefined;
 let menuRetryAt: number | undefined;
 let retryStatusTimer: ReturnType<typeof setTimeout> | undefined;
 let settingsSave: Promise<void> = Promise.resolve();
+let menuOcr: ReturnType<typeof setupOcrControl> | undefined;
 let unsubscribeTranslationState: (() => void) | undefined;
 let paragraphMode = false;
 let floatingBallEnabled = true;
+let shortcutEnabled = normalizeShortcutEnabled(undefined);
+let settingsSnapshot = createSettingsSnapshot(readSettings);
 let debugRefreshTimer: number | undefined;
 let debugDragging = false;
 let debugDragOffsetX = 0;
@@ -112,6 +113,9 @@ export function initFloatingBall(): void {
   menuRetryAt = undefined;
   clearTimeout(retryStatusTimer);
   settingsSave = Promise.resolve();
+  settingsSnapshot = createSettingsSnapshot(readSettings);
+  menuOcr?.dispose();
+  menuOcr = undefined;
 
   const hitbox = document.createElement("div");
   hitbox.id = FLOATING_HITBOX_ID;
@@ -143,9 +147,12 @@ export function initFloatingBall(): void {
     if (touchInteraction) event.preventDefault();
   });
   button.addEventListener("focus", () => {
-    if (button.matches(":focus-visible")) openMenu();
+    if (shortcutEnabled["floating-controls"] && button.matches(":focus-visible")) openMenu();
   });
   button.addEventListener("keydown", (event) => {
+    if (!shortcutEnabled["floating-controls"] && ["Enter", " ", "ArrowDown"].includes(event.key)) {
+      event.preventDefault(); return;
+    }
     if (event.key !== "ArrowDown") return;
     event.preventDefault();
     openMenu();
@@ -175,7 +182,7 @@ export function initFloatingBall(): void {
   window.addEventListener("scroll", updateHighlight, { passive: true });
   document.addEventListener("click", closeMenuOnOutsideClick, true);
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
+    if (event.key !== "Escape" || event.isComposing || !shortcutEnabled["dismiss-overlays"]) return;
     cancelMenuOpen();
     cancelLongPress();
     const menu = document.getElementById("wupage-floating-menu");
@@ -207,6 +214,9 @@ function subscribeToPositionChanges(button: HTMLElement): void {
     if (areaName !== "local") return;
     const settings = changes[SETTINGS_KEY]?.newValue as ExtensionSettings | undefined;
     if (settings) {
+      settingsSnapshot.receive(settings);
+      shortcutEnabled = normalizeShortcutEnabled(settings.shortcutEnabled, settings.shortcuts);
+      if (!shortcutEnabled["paragraph-click"]) setActiveParagraph(null);
       floatingBallEnabled = settings.floatingBallEnabled;
       applyFloatingBallVisibility();
       const menu = document.getElementById("wupage-floating-menu");
@@ -219,7 +229,7 @@ function subscribeToPositionChanges(button: HTMLElement): void {
 }
 
 function handleParagraphPreview(event: MouseEvent): void {
-  if (!paragraphMode) return;
+  if (!paragraphMode || !shortcutEnabled["paragraph-click"]) return;
   const target = event.target instanceof Element ? event.target : null;
   if (!target || target.closest(`#${FLOATING_ID}, #${FLOATING_HITBOX_ID}, #wupage-floating-menu, .wupage-translation`)) {
     return;
@@ -239,35 +249,8 @@ async function translateActiveParagraph(): Promise<void> {
 
   try {
     const target = activeParagraph;
-    if (hasTranslationsIn(target)) {
-      clearTranslationsIn(target);
-      setActiveParagraph(target);
-      return;
-    }
-
-    const settings = await getSettings();
-    const segments = collectParagraphTextSegments(target, settings.translateCodeComments);
-    if (!segments.length) return;
-    renderTranslationPlaceholders(segments);
-
-    try {
-      const data = await translateSegments(
-        settings,
-        segments.map((segment) => segment.text),
-        buildTranslationContext([target])
-      );
-      renderTranslations(
-        segments.map((segment, index) => ({
-          id: segment.id,
-          text: data.translations[index]
-        })),
-        getPageTranslationDisplayMode(settings.translationDisplayMode)
-      );
-      setActiveParagraph(target);
-    } catch (error) {
-      clearTranslationsIn(target);
-      throw error;
-    }
+    await translateParagraph(target);
+    setActiveParagraph(target);
   } finally {
     translating = false;
     refreshTranslationState();
@@ -275,7 +258,7 @@ async function translateActiveParagraph(): Promise<void> {
 }
 
 function handleDocumentClick(event: MouseEvent): void {
-  if (!paragraphMode || !event.ctrlKey) return;
+  if (!paragraphMode || !event.ctrlKey || !shortcutEnabled["paragraph-click"]) return;
   const target = event.target instanceof Element ? event.target : null;
   if (!target || target.closest(`#${FLOATING_ID}, #${FLOATING_HITBOX_ID}, .wupage-translation`)) return;
   if (target.closest("#wupage-floating-menu")) return;
@@ -366,12 +349,14 @@ function createMenu(): void {
   menu.setAttribute("role", "dialog");
   menu.setAttribute("aria-label", "WuPage 翻译");
   menu.innerHTML = `
+    <div class="wupage-menu-top">
     <div class="wupage-menu-header">
       <strong>WuPage</strong>
-      <button type="button" data-action="settings">更多设置</button>
+      <button type="button" data-action="settings" aria-label="打开设置" title="打开设置">
+        ${uiIconMarkup("settings")}
+      </button>
     </div>
     <div class="wupage-menu-section">
-      <span class="wupage-field-label">翻译语言</span>
       <div class="wupage-language-pair">
         <label class="wupage-language-select">
           <span class="wupage-visually-hidden">源语言</span>
@@ -381,15 +366,9 @@ function createMenu(): void {
             ).join("")}
           </select>
           <span class="wupage-language-value" data-role="source-lang-value" aria-hidden="true">自动检测</span>
-          <span class="wupage-language-chevron" aria-hidden="true"></span>
+          <span class="wupage-language-chevron" aria-hidden="true">${uiIconMarkup("arrow-down-03")}</span>
         </label>
-        <span class="wupage-language-direction" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.1" />
-            <path d="M7 12h10m-4-4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M5 8h2M5 16h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.45" />
-          </svg>
-        </span>
+        <span class="wupage-language-direction" aria-hidden="true">${uiIconMarkup("arrow-right")}</span>
         <label class="wupage-language-select">
           <span class="wupage-visually-hidden">目标语言</span>
           <select data-role="target-lang">
@@ -398,8 +377,12 @@ function createMenu(): void {
             ).join("")}
           </select>
           <span class="wupage-language-value" data-role="target-lang-value" aria-hidden="true">中文</span>
-          <span class="wupage-language-chevron" aria-hidden="true"></span>
+          <span class="wupage-language-chevron" aria-hidden="true">${uiIconMarkup("arrow-down-03")}</span>
         </label>
+        <div class="wupage-language-automatic">
+          <button type="button" data-action="auto-translation" class="wupage-feature-button wupage-language-auto" aria-label="自动翻译" aria-pressed="false" title="按站点或页面语言规则自动翻译">自动</button>
+          <button type="button" data-action="add-auto-site" class="wupage-language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表">${uiIconMarkup("plus")}</button>
+        </div>
       </div>
     </div>
     <label class="wupage-menu-field">
@@ -408,35 +391,55 @@ function createMenu(): void {
         <select data-role="provider" aria-label="翻译服务" hidden></select>
       </span>
     </label>
-    <div class="wupage-menu-section">
-      <span class="wupage-field-label" id="wupage-display-mode-label">显示模式</span>
-      <div class="wupage-display-modes" role="group" aria-labelledby="wupage-display-mode-label">
+    </div>
+    <label class="wupage-menu-field">
+      <span class="wupage-field-label" id="wupage-display-mode-label">翻译模式</span>
+      <select data-role="display-mode" aria-labelledby="wupage-display-mode-label">
         ${TRANSLATION_DISPLAY_MODES.map((mode) =>
-          `<button type="button" data-action="display-mode" data-mode="${mode.value}" title="${mode.description}" aria-pressed="false">${mode.label}</button>`
+          `<option value="${mode.value}">${mode.label}</option>`
         ).join("")}
+        <option value="paragraph">段落模式</option>
+      </select>
+    </label>
+    <div class="wupage-feature-buttons" role="group" aria-label="翻译功能">
+      <button type="button" data-action="context-menu-translation" class="wupage-feature-button" aria-pressed="false" title="右键点击正文段落，通过菜单翻译或恢复原文">
+        <span>右键翻译</span>
+        <span class="wupage-feature-indicator" aria-hidden="true"></span>
+      </button>
+      <button type="button" data-action="close" class="wupage-feature-button" aria-pressed="true" title="隐藏悬浮球，可在扩展弹窗中重新开启">
+        <span>悬浮球</span>
+        <span class="wupage-feature-indicator" aria-hidden="true"></span>
+      </button>
+      <button type="button" data-action="selection-translation" class="wupage-feature-button" title="选中文字后显示查词或翻译入口">
+        <span>划词翻译</span><span class="wupage-feature-indicator" aria-hidden="true"></span>
+      </button>
+      <div class="image-feature" data-loading aria-busy="true">
+        <div class="image-feature-row">
+          <button type="button" data-action="image-translation" class="wupage-feature-button" disabled title="开启后，点击图片旁的按钮翻译并覆盖原文" aria-describedby="wupage-ocr-description wupage-ocr-status"><span>图片翻译</span><span class="wupage-feature-indicator" aria-hidden="true"></span></button>
+          <div class="ocr-help-slot"></div>
+          <button type="button" class="ocr-model-action" data-role="ocr-action" aria-label="安装 OCR 模型" disabled></button>
+        </div>
+        <p id="wupage-ocr-description" class="ocr-description"></p>
+        <progress data-role="ocr-progress" class="ocr-model-progress" aria-label="OCR 模型下载进度" hidden></progress>
+        <p id="wupage-ocr-status" class="ocr-model-status" role="status"></p>
       </div>
     </div>
-    <div class="wupage-menu-divider"></div>
+    <p class="wupage-menu-hint" hidden>按住 Ctrl 点击段落翻译；再次点击恢复原文。</p>
     <button type="button" data-action="page-toggle">翻译全文</button>
     <div class="wupage-translation-feedback">
       <p data-role="translation-status" role="status" aria-live="polite" aria-atomic="true">点击悬浮球即可翻译全文</p>
       <button type="button" data-action="retranslate" hidden>重新翻译</button>
       <button type="button" data-action="doubao-settings" hidden>豆包登录与检测</button>
     </div>
-    <button type="button" data-action="auto-translation" class="wupage-switch-row" aria-pressed="false">
-      <span>自动翻译</span>
-      <span class="wupage-switch" aria-hidden="true"><span></span></span>
-    </button>
-    <button type="button" data-action="paragraph-mode" class="wupage-switch-row">
-      <span>段落模式</span>
-      <span class="wupage-switch" aria-hidden="true"><span></span></span>
-    </button>
-    <p class="wupage-menu-hint">开启后，按住 Ctrl 点击段落翻译；再次点击恢复原文。</p>
-    <div class="wupage-menu-divider"></div>
-    <div class="wupage-menu-footer">
-      <button type="button" data-action="close" title="可在扩展弹窗中重新开启">隐藏悬浮球</button>
-    </div>
   `;
+  const pointerMedia = window.matchMedia?.("(any-hover: none) and (any-pointer: coarse)");
+  const updateParagraphOption = () => {
+    const option = menu.querySelector<HTMLOptionElement>('option[value="paragraph"]')!;
+    option.hidden = option.disabled = pointerMedia?.matches === true;
+  };
+  updateParagraphOption();
+  pointerMedia?.addEventListener("change", updateParagraphOption);
+  window.addEventListener("pagehide", () => pointerMedia?.removeEventListener("change", updateParagraphOption), { once: true });
   menu.addEventListener("pointerenter", (event) => {
     touchInteraction = event.pointerType === "touch";
     cancelMenuClose();
@@ -458,10 +461,11 @@ function createMenu(): void {
     if (target.dataset.role === "provider") {
       void updateFloatingSettings(menu, { activeProviderId: target.value }).catch(showMenuError);
     }
+    if (target.dataset.role === "display-mode") void updateDisplayMode(menu, target).catch(showMenuError);
   });
   menu.addEventListener("click", (event) => {
-    const target = event.target instanceof HTMLElement ? event.target.closest("button") : null;
-    if (!target) return;
+    const target = event.target instanceof Element ? event.target.closest("button") : null;
+    if (!target || target.disabled) return;
     event.preventDefault();
 
     const action = target.dataset.action;
@@ -473,14 +477,13 @@ function createMenu(): void {
       void setFloatingBallEnabled(false).catch(showMenuError);
       return;
     }
-    if (action === "paragraph-mode") void setParagraphMode(!paragraphMode).catch(showMenuError);
+    if (action === "context-menu-translation") void toggleContextMenuTranslation(menu).catch(showMenuError);
     if (action === "auto-translation") void toggleAutoTranslation(menu).catch(showMenuError);
+    if (action === "add-auto-site") void toggleCurrentAutoTranslationSite(menu).catch(showMenuError);
+    if (action === "selection-translation") void toggleReadingFeature(menu, "selection").catch(showMenuError);
+    if (action === "image-translation") void toggleReadingFeature(menu, "image").catch(showMenuError);
     if (action === "page-toggle") void togglePageTranslationFromFloating();
     if (action === "retranslate") void togglePageTranslationFromFloating(true);
-    if (action === "display-mode") {
-      const mode = target.dataset.mode as TranslationDisplayMode;
-      void updateFloatingSettings(menu, { translationDisplayMode: mode }).catch(showMenuError);
-    }
   });
   document.documentElement.append(menu);
 }
@@ -613,10 +616,8 @@ function closeMenuOnOutsideClick(event: MouseEvent): void {
 }
 
 async function updateMenuState(menu: HTMLElement): Promise<void> {
-  const paragraphModeButton = menu.querySelector<HTMLButtonElement>("[data-action='paragraph-mode']");
-  if (paragraphModeButton) {
-    paragraphModeButton.setAttribute("aria-pressed", String(paragraphMode));
-  }
+  const hint = menu.querySelector<HTMLElement>(".wupage-menu-hint");
+  if (hint) hint.hidden = !paragraphMode;
   refreshTranslationState();
 
   const settings = await getSettings();
@@ -627,6 +628,14 @@ function applyMenuSettings(menu: HTMLElement, settings: ExtensionSettings): void
   const automatic = menu.querySelector<HTMLButtonElement>("[data-action='auto-translation']");
   if (automatic) automatic.setAttribute("aria-pressed", String(settings.autoTranslation?.enabled === true));
   menu.dataset.doubaoProvider = String(settings.providers.find((provider) => provider.id === settings.activeProviderId)?.type === "doubao-web");
+  updateAutoTranslationSiteButton(menu, settings.autoTranslation);
+  const contextMenu = menu.querySelector<HTMLButtonElement>("[data-action='context-menu-translation']");
+  if (contextMenu) contextMenu.setAttribute("aria-pressed", String(settings.contextMenuTranslationEnabled === true));
+  menu.querySelector("[data-action='selection-translation']")?.setAttribute("aria-pressed", String(normalizeSelectionTranslation(settings.selectionTranslation).enabled));
+  const imageToggle = menu.querySelector<HTMLButtonElement>("[data-action='image-translation']");
+  if (imageToggle) setImageTranslationToggle(imageToggle, settings.imageTranslationEnabled === true);
+  void menuOcr?.refresh();
+  menu.querySelector("[data-action='close']")?.setAttribute("aria-pressed", String(settings.floatingBallEnabled));
   let localNotice = menu.querySelector<HTMLElement>("[data-role='local-notice']");
   const noticeText = localProviderNotice(settings) ?? doubaoProviderNotice(settings);
   if (!localNotice && noticeText) {
@@ -671,9 +680,10 @@ function applyMenuSettings(menu: HTMLElement, settings: ExtensionSettings): void
     }
     enhanceProviderSelect(providerSelect, settings.providers);
   }
-  menu.querySelectorAll<HTMLButtonElement>("[data-action='display-mode']").forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.mode === settings.translationDisplayMode));
-  });
+  const mode = menu.querySelector<HTMLSelectElement>("[data-role='display-mode']");
+  if (mode) mode.value = paragraphMode ? "paragraph" : settings.translationDisplayMode;
+  const button = document.getElementById(FLOATING_ID);
+  if (button && !menu.hidden) positionMenu(menu, button, true);
   refreshTranslationState();
 }
 
@@ -790,6 +800,23 @@ function setMenuOpen(menu: HTMLElement, open: boolean): void {
   cancelMenuClose();
   if (!open) cancelLongPress();
   menu.hidden = !open;
+  if (open) {
+    if (menuOcr) void menuOcr.refresh();
+    else {
+      const toggle = menu.querySelector<HTMLButtonElement>("[data-action='image-translation']")!;
+      menuOcr = setupOcrControl(toggle, () => toggle.setAttribute("aria-pressed", "false"), {
+        request: sendRuntimeRequest,
+        helpId: "wupage-ocr-help",
+        shouldPoll: () => menu.isConnected && !menu.hidden && toggle.getAttribute("aria-busy") !== "true",
+        elements: {
+          action: menu.querySelector<HTMLButtonElement>("[data-role='ocr-action']")!,
+          description: menu.querySelector<HTMLElement>("#wupage-ocr-description")!,
+          status: menu.querySelector<HTMLElement>("#wupage-ocr-status")!,
+          progress: menu.querySelector<HTMLProgressElement>("[data-role='ocr-progress']")!
+        }
+      });
+    }
+  } else menuOcr?.pause();
   const button = document.getElementById(FLOATING_ID);
   button?.classList.toggle("is-menu-open", open);
   button?.setAttribute("aria-expanded", String(open));
@@ -866,7 +893,7 @@ async function togglePageTranslationFromFloating(force = false): Promise<void> {
   }
 }
 
-function refreshTranslationState(): void {
+export function refreshTranslationState(): void {
   clearTimeout(retryStatusTimer);
   const state = getPageTranslationState();
   const busy = pageActionPending || state.pending > 0;
@@ -969,7 +996,7 @@ export async function openDebugPanel(): Promise<void> {
   panel.innerHTML = `
     <header>
       <strong>Debug</strong>
-      <button type="button" data-action="close-debug" title="关闭">×</button>
+      <button type="button" data-action="close-debug" title="关闭" aria-label="关闭 Debug 面板">${uiIconMarkup("cross")}</button>
     </header>
     <div class="wupage-debug-summary">正在读取任务...</div>
     <div class="wupage-debug-list"></div>
@@ -1222,17 +1249,18 @@ export function getFloatingBallEnabled(): boolean {
 }
 
 export async function setFloatingBallEnabled(enabled: boolean): Promise<void> {
+  const previous = floatingBallEnabled;
   floatingBallEnabled = enabled;
   applyFloatingBallVisibility();
-  const settings = await getSettings();
-  if (settings.floatingBallEnabled !== enabled) {
-    await sendRuntimeRequest({
-      type: "SAVE_SETTINGS",
-      settings: {
-        ...settings,
-        floatingBallEnabled: enabled
-      }
-    } satisfies RuntimeRequest);
+  try {
+    const settings = await getSettings();
+    if (settings.floatingBallEnabled !== enabled) {
+      await sendRuntimeRequest({ type: "SAVE_SETTINGS", settings: { ...settings, floatingBallEnabled: enabled } } satisfies RuntimeRequest);
+    }
+  } catch (error) {
+    floatingBallEnabled = previous;
+    applyFloatingBallVisibility();
+    throw error;
   }
 }
 
@@ -1246,6 +1274,7 @@ export async function setParagraphMode(enabled: boolean): Promise<void> {
 
 async function syncFloatingBallFromSettings(): Promise<void> {
   const settings = await getSettings();
+  shortcutEnabled = normalizeShortcutEnabled(settings.shortcutEnabled, settings.shortcuts);
   floatingBallEnabled = settings.floatingBallEnabled;
   const menu = document.getElementById("wupage-floating-menu");
   if (menu) applyMenuSettings(menu, settings);
@@ -1275,28 +1304,116 @@ async function toggleAutoTranslation(menu: HTMLElement): Promise<void> {
   const button = menu.querySelector<HTMLButtonElement>("[data-action='auto-translation']")!;
   if (button.disabled) return;
   button.disabled = true; button.setAttribute("aria-busy", "true");
+  menu.querySelector<HTMLButtonElement>("[data-action='add-auto-site']")!.disabled = true;
   try {
     const settings = await getSettings();
     const rules = normalizeAutoTranslation(settings.autoTranslation);
     await updateFloatingSettings(menu, { autoTranslation: setAutoTranslationEnabled(rules, !rules.enabled) });
-  } finally { button.disabled = false; button.setAttribute("aria-busy", "false"); }
+  } finally {
+    button.disabled = false; button.setAttribute("aria-busy", "false");
+    await getSettings().then(settings => applyMenuSettings(menu, settings)).catch(() => {});
+  }
 }
 
-function updateFloatingSettings(menu: HTMLElement, patch: Partial<ExtensionSettings>): Promise<void> {
+function updateAutoTranslationSiteButton(menu: HTMLElement, value: ExtensionSettings["autoTranslation"]): void {
+  const add = menu.querySelector<HTMLButtonElement>("[data-action='add-auto-site']")!;
+  const automatic = menu.querySelector<HTMLButtonElement>("[data-action='auto-translation']")!;
+  const pattern = currentWebsitePattern(window.location.href);
+  const added = hasAutoTranslationWebsite(value, window.location.href);
+  add.hidden = !normalizeAutoTranslation(value).enabled;
+  add.disabled = !pattern || automatic.getAttribute("aria-busy") === "true" || add.getAttribute("aria-busy") === "true";
+  add.innerHTML = uiIconMarkup(added ? "tick" : "plus");
+  add.setAttribute("aria-pressed", String(added));
+  const label = !pattern ? "请切换到普通网页后再添加网站" : added ? `将 ${pattern} 排除自动翻译` : `将 ${pattern} 加入自动翻译列表`;
+  add.title = label;
+  add.setAttribute("aria-label", label);
+}
+
+async function toggleCurrentAutoTranslationSite(menu: HTMLElement): Promise<void> {
+  const add = menu.querySelector<HTMLButtonElement>("[data-action='add-auto-site']")!;
+  const automatic = menu.querySelector<HTMLButtonElement>("[data-action='auto-translation']")!;
+  if (add.disabled || automatic.disabled) return;
+  const include = add.getAttribute("aria-pressed") !== "true";
+  add.disabled = automatic.disabled = true;
+  add.setAttribute("aria-busy", "true"); automatic.setAttribute("aria-busy", "true");
+  try {
+    await updateFloatingSettings(menu, previous => ({ autoTranslation: include ? addAutoTranslationWebsite(previous.autoTranslation, window.location.href) : excludeAutoTranslationWebsite(previous.autoTranslation, window.location.href) }));
+  } finally {
+    automatic.disabled = false;
+    add.disabled = false;
+    add.setAttribute("aria-busy", "false"); automatic.setAttribute("aria-busy", "false");
+    await getSettings().then(settings => applyMenuSettings(menu, settings)).catch(() => {});
+  }
+}
+
+async function toggleContextMenuTranslation(menu: HTMLElement): Promise<void> {
+  const button = menu.querySelector<HTMLButtonElement>("[data-action='context-menu-translation']")!;
+  if (button.disabled) return;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    const settings = await getSettings();
+    await updateFloatingSettings(menu, { contextMenuTranslationEnabled: settings.contextMenuTranslationEnabled !== true });
+  } finally {
+    button.disabled = false;
+    button.setAttribute("aria-busy", "false");
+  }
+}
+
+async function toggleReadingFeature(menu: HTMLElement, feature: "selection" | "image"): Promise<void> {
+  const button = menu.querySelector<HTMLButtonElement>(`[data-action='${feature}-translation']`)!;
+  if (button.disabled) return;
+  const enabled = button.getAttribute("aria-pressed") !== "true";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    await updateFloatingSettings(menu, previous => feature === "image" ? { imageTranslationEnabled: enabled } : {
+      selectionTranslation: { ...normalizeSelectionTranslation(previous.selectionTranslation), enabled }
+    });
+  } finally {
+    button.disabled = false;
+    button.setAttribute("aria-busy", "false");
+    if (feature === "image") void menuOcr?.refresh();
+  }
+}
+
+async function updateDisplayMode(menu: HTMLElement, select: HTMLSelectElement): Promise<void> {
+  const requested = select.value;
+  const previousParagraph = paragraphMode;
+  select.disabled = true;
+  select.setAttribute("aria-busy", "true");
+  try {
+    if (requested === "paragraph") await setParagraphMode(true);
+    else {
+      if (paragraphMode) await setParagraphMode(false);
+      await updateFloatingSettings(menu, { translationDisplayMode: requested as TranslationDisplayMode });
+    }
+  } catch (error) {
+    if (paragraphMode !== previousParagraph) await setParagraphMode(previousParagraph);
+    throw error;
+  } finally {
+    select.disabled = false;
+    select.setAttribute("aria-busy", "false");
+  }
+}
+
+function updateFloatingSettings(menu: HTMLElement, change: Partial<ExtensionSettings> | ((settings: ExtensionSettings) => Partial<ExtensionSettings>)): Promise<void> {
   const save = settingsSave.catch(() => undefined).then(async () => {
     const previous = await getSettings();
+    const patch = typeof change === "function" ? change(previous) : change;
     const settings = { ...previous, ...patch };
     try {
       await sendRuntimeRequest({ type: "SAVE_SETTINGS", settings } satisfies RuntimeRequest);
     } catch (error) {
-      applyMenuSettings(menu, previous);
+      applyMenuSettings(menu, settingsSnapshot.current() ?? previous);
       throw error;
     }
     if (patch.translationDisplayMode) setPageTranslationDisplayMode(patch.translationDisplayMode);
     menuError = null;
     menuErrorCode = undefined;
     menuRetryAt = undefined;
-    applyMenuSettings(menu, settings);
+    applyMenuSettings(menu, await getSettings());
+    refreshTranslationState();
   });
   settingsSave = save;
   void save.catch(() => {
@@ -1316,23 +1433,11 @@ async function saveLocal(items: Record<string, unknown>): Promise<void> {
 }
 
 async function getSettings(): Promise<ExtensionSettings> {
-  return sendRuntimeRequest<ExtensionSettings>({
-    type: "GET_SETTINGS"
-  } satisfies RuntimeRequest);
+  return settingsSnapshot.read();
 }
 
-async function translateSegments(
-  settings: ExtensionSettings,
-  texts: string[],
-  context?: string
-): Promise<TranslateBatchResponse> {
-  return sendRuntimeRequest<TranslateBatchResponse>({
-    type: "TRANSLATE_BATCH",
-    texts,
-    preservePlaceholders: true,
-    context,
-    sourceLang: settings.sourceLang,
-    targetLang: settings.targetLang,
-    providerId: settings.activeProviderId
+async function readSettings(): Promise<ExtensionSettings> {
+  return sendRuntimeRequest<ExtensionSettings>({
+    type: "GET_SETTINGS"
   } satisfies RuntimeRequest);
 }

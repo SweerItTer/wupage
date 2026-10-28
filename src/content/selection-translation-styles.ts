@@ -26,8 +26,9 @@ header { display: flex; align-items: center; flex: 0 0 auto; gap: 10px; padding:
 .submit-source { flex: 0 0 auto; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--accent); }
 .submit-source:hover { background: var(--line); }
 .translation-service { flex: 0 1 auto; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 7px; border-radius: 6px; background: var(--soft); color: var(--muted); font-size: 12px; }
-select { max-width: 110px; min-width: 0; padding: 5px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12px; }
+select { max-width: 110px; min-width: 0; padding: 5px 24px 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12px; appearance: none; background-image: var(--wp-selection-select-arrow); background-position: right 7px center; background-size: 9px 9px; background-repeat: no-repeat; }
 .close { flex: 0 0 26px; height: 26px; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font-size: 22px; line-height: 1; }
+.close svg, .speak svg { width: 14px; height: 14px; }
 .close:hover { background: var(--soft); }
 .body { min-width: 0; min-height: 44px; padding: 0 16px 14px; overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; }
 .selection-translation { margin: 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }

@@ -24,6 +24,7 @@ describe("floating translation interactions", () => {
     stored = structuredClone(DEFAULT_SETTINGS);
     vi.mocked(sendRuntimeRequest).mockImplementation(async (request: RuntimeRequest) => {
       if (request.type === "GET_SETTINGS") return structuredClone(stored);
+      if (request.type === "GET_OCR_STATUS") return { state: "installed", total: 100, downloaded: 100 };
       if (request.type === "SAVE_SETTINGS") {
         stored = structuredClone(request.settings);
         return undefined;
@@ -92,7 +93,7 @@ describe("floating translation interactions", () => {
     await vi.waitFor(() => expect(menu.hidden).toBe(false));
     expect(query(".wupage-provider-trigger .wupage-provider-name").textContent)
       .toBe(stored.providers.find((entry) => entry.id === stored.activeProviderId)!.label);
-    expect(query(`[data-mode='${stored.translationDisplayMode}']`).getAttribute("aria-pressed")).toBe("true");
+    expect(query<HTMLSelectElement>("[data-role='display-mode']").value).toBe(stored.translationDisplayMode);
   });
 
   it("opens after 500 ms of hover and allows crossing the gap before closing on leave", () => {
@@ -419,11 +420,11 @@ describe("floating translation interactions", () => {
     expect([...provider.options].some((option) => option.value === stored.providers[1].id)).toBe(false);
     provider.value = "deepseek";
     provider.dispatchEvent(new Event("change", { bubbles: true }));
-    query<HTMLButtonElement>("[data-mode='replace']").click();
+    selectMode("replace");
     await vi.waitFor(() => expect(stored).toMatchObject({ activeProviderId: "deepseek", translationDisplayMode: "replace" }));
     query<HTMLButtonElement>("#wupage-floating-ball").click();
     await vi.waitFor(() => expect(query(".wupage-translation").getAttribute("data-wupage-display-mode")).toBe("replace"));
-    query<HTMLButtonElement>("[data-mode='bilingual-accent']").click();
+    selectMode("bilingual-accent");
     await vi.waitFor(() => expect(query(".wupage-translation").getAttribute("data-wupage-display-mode")).toBe("bilingual-accent"));
     expect(translationRequests()).toHaveLength(1);
   });
@@ -451,10 +452,10 @@ describe("floating translation interactions", () => {
       if (request.type === "SAVE_SETTINGS") throw new Error("设置保存失败");
       return runtime(request);
     });
-    query<HTMLButtonElement>("[data-mode='replace']").click();
+    selectMode("replace");
     await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("设置保存失败"));
     expect(stored.translationDisplayMode).toBe("bilingual");
-    expect(query("[data-mode='bilingual']").getAttribute("aria-pressed")).toBe("true");
+    expect(query<HTMLSelectElement>("[data-role='display-mode']").value).toBe("bilingual");
     query<HTMLButtonElement>("#wupage-floating-ball").click();
     await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("已翻译 1 段"));
   });
@@ -604,9 +605,30 @@ describe("floating translation interactions", () => {
   it("shows paragraph instructions inline without an extra confirmation", async () => {
     const alert = vi.spyOn(window, "alert");
     await setParagraphMode(true);
-    expect(query("[data-action='paragraph-mode']").getAttribute("aria-pressed")).toBe("true");
+    expect(query<HTMLSelectElement>("[data-role='display-mode']").value).toBe("paragraph");
     expect(query(".wupage-menu-hint").textContent).toContain("Ctrl");
     expect(alert).not.toHaveBeenCalled();
+    await setParagraphMode(false);
+  });
+
+  it("respects independent paragraph, floating keyboard and dismissal switches", async () => {
+    stored.shortcutEnabled = { ...stored.shortcutEnabled!, "paragraph-click": false, "floating-controls": false, "dismiss-overlays": false };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    await setParagraphMode(true);
+    query("main p").dispatchEvent(new MouseEvent("click", { ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(translationRequests()).toHaveLength(0);
+    const ball = query<HTMLButtonElement>("#wupage-floating-ball");
+    for (const key of ["Enter", " ", "ArrowDown"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      ball.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+    }
+    const menu = query<HTMLElement>("#wupage-floating-menu"); menu.hidden = false;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(menu.hidden).toBe(false);
+    stored.shortcutEnabled = { ...stored.shortcutEnabled, "dismiss-overlays": true };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(menu.hidden).toBe(true);
     await setParagraphMode(false);
   });
 
@@ -627,12 +649,174 @@ describe("floating translation interactions", () => {
     expect(query<HTMLElement>("#wupage-floating-hitbox").hidden).toBe(true);
     expect(menu.hidden).toBe(true);
   });
+
+  it("preserves selection preferences, rolls back failed changes and follows external settings", async () => {
+    stored.selectionTranslation = { enabled: true, provider: "bing", style: "underline" };
+    const toggle = query<HTMLButtonElement>("[data-action='selection-translation']");
+    toggle.click();
+    await vi.waitFor(() => expect(stored.selectionTranslation?.enabled).toBe(false));
+    expect(stored.selectionTranslation).toEqual({ enabled: false, provider: "bing", style: "underline" });
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation(async request => {
+      if (request.type === "SAVE_SETTINGS") throw new Error("保存失败");
+      return runtime(request);
+    });
+    toggle.click();
+    await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("保存失败"));
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.disabled).toBe(false);
+    stored.selectionTranslation.enabled = true;
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("gates image translation on the model and supports installing, enabling and removing it", async () => {
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    let installed = false;
+    vi.mocked(sendRuntimeRequest).mockImplementation(async request => {
+      if (request.type === "INSTALL_OCR") installed = true;
+      if (request.type === "REMOVE_OCR") { installed = false; stored.imageTranslationEnabled = false; }
+      if (["GET_OCR_STATUS", "INSTALL_OCR", "REMOVE_OCR"].includes(request.type)) {
+        return { state: installed ? "installed" : "missing", downloaded: installed ? 100 : 0, total: 100 };
+      }
+      return runtime(request);
+    });
+    query("#wupage-floating-ball").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    const image = query<HTMLButtonElement>("[data-action='image-translation']");
+    const model = query<HTMLButtonElement>("[data-role='ocr-action']");
+    await vi.waitFor(() => expect(model.title).toContain("安装 OCR"));
+    expect(image.disabled).toBe(true);
+    query<HTMLButtonElement>(".ocr-help-trigger").click();
+    expect(query<HTMLElement>("#wupage-ocr-help").hidden).toBe(false);
+    expect(stored.imageTranslationEnabled).toBe(false);
+    model.click();
+    await vi.waitFor(() => expect(image.disabled).toBe(false));
+    image.click();
+    await vi.waitFor(() => expect(stored.imageTranslationEnabled).toBe(true));
+    expect(image.getAttribute("aria-pressed")).toBe("true");
+    model.click();
+    await vi.waitFor(() => expect(image.disabled).toBe(true));
+    expect(image.getAttribute("aria-pressed")).toBe("false");
+    expect(stored.imageTranslationEnabled).toBe(false);
+  });
+
+  it("prevents repeated image saves and restores the previous value after failure", async () => {
+    query("#wupage-floating-ball").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    const toggle = query<HTMLButtonElement>("[data-action='image-translation']");
+    await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    let rejectSave!: (error: Error) => void;
+    vi.mocked(sendRuntimeRequest).mockImplementation(async request => {
+      if (request.type === "SAVE_SETTINGS") await new Promise((_, reject) => { rejectSave = reject; });
+      return runtime(request);
+    });
+    toggle.click();
+    await vi.waitFor(() => expect(rejectSave).toBeTypeOf("function"));
+    toggle.click();
+    expect(vi.mocked(sendRuntimeRequest).mock.calls.filter(([request]) => request.type === "SAVE_SETTINGS")).toHaveLength(1);
+    rejectSave(new Error("图片开关保存失败"));
+    await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(stored.imageTranslationEnabled).toBe(false);
+  });
+
+  it("restores the floating ball when its switch cannot be saved", async () => {
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation(async request => {
+      if (request.type === "SAVE_SETTINGS") throw new Error("保存失败");
+      return runtime(request);
+    });
+    query<HTMLButtonElement>("[data-action='close']").click();
+    await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("保存失败"));
+    expect(query<HTMLElement>("#wupage-floating-hitbox").hidden).toBe(false);
+    expect(query<HTMLElement>("#wupage-floating-menu").hidden).toBe(false);
+  });
+
+  it("adds the current website from the floating menu and follows external rule changes", async () => {
+    const add = query<HTMLButtonElement>("[data-action='add-auto-site']");
+    expect(add.hidden).toBe(true);
+    stored.autoTranslation = { enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [] };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(add.hidden).toBe(false);
+    expect(add.disabled).toBe(false);
+    add.click();
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
+    expect(stored.autoTranslation).toMatchObject({ enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [
+      { id: expect.any(String), pattern: window.location.host, enabled: true }
+    ] });
+    await vi.waitFor(() => expect(add.disabled).toBe(false));
+    add.click();
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("plus"));
+    expect(stored.autoTranslation!.excludedSites).toEqual([window.location.host]);
+    add.click(); await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
+    expect(stored.autoTranslation!.excludedSites).toBeUndefined();
+    expect(stored.autoTranslation!.customSites).toHaveLength(1);
+    stored.autoTranslation.enabled = false;
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(add.hidden).toBe(true);
+  });
+
+  it("does not overwrite saved menu settings when an older refresh finishes later", async () => {
+    const previous = structuredClone(stored);
+    let finishSettings!: (value: unknown) => void;
+    let delay = true;
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation(request => {
+      if (request.type === "GET_SETTINGS" && delay) {
+        delay = false;
+        return new Promise(resolve => { finishSettings = resolve; });
+      }
+      return runtime(request);
+    });
+    query("#wupage-floating-ball").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+    await vi.waitFor(() => expect(finishSettings).toBeTypeOf("function"));
+    stored = { ...stored, sourceLang: "ja", targetLang: "en", activeProviderId: "deepseek", translationDisplayMode: "replace",
+      contextMenuTranslationEnabled: false, selectionTranslation: { enabled: false, provider: "bing", style: "underline" },
+      autoTranslation: { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] } };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(query("[data-action='auto-translation']").getAttribute("aria-pressed")).toBe("true");
+    finishSettings(previous);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(query("[data-action='auto-translation']").getAttribute("aria-pressed")).toBe("true");
+    expect(query<HTMLButtonElement>("[data-action='add-auto-site']").hidden).toBe(false);
+    expect(query<HTMLSelectElement>("[data-role='source-lang']").value).toBe("ja");
+    expect(query<HTMLSelectElement>("[data-role='target-lang']").value).toBe("en");
+    expect(query<HTMLSelectElement>("[data-role='provider']").value).toBe("deepseek");
+    expect(query<HTMLSelectElement>("[data-role='display-mode']").value).toBe("replace");
+    expect(query("[data-action='selection-translation']").getAttribute("aria-pressed")).toBe("false");
+    expect(query("[data-action='context-menu-translation']").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keeps a failed website addition retryable without losing existing rules", async () => {
+    stored.autoTranslation = { enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [] };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    const add = query<HTMLButtonElement>("[data-action='add-auto-site']");
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation(async request => {
+      if (request.type === "SAVE_SETTINGS") throw new Error("添加网站失败");
+      return runtime(request);
+    });
+    add.click();
+    await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("添加网站失败"));
+    expect(stored.autoTranslation.customSites).toEqual([]);
+    expect(add.disabled).toBe(false);
+    expect(add.querySelector('svg')?.dataset.icon).toBe("plus");
+    vi.mocked(sendRuntimeRequest).mockImplementation(runtime);
+    add.click();
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
+  });
 });
 
 function query<T extends Element = HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Missing element: ${selector}`);
   return element;
+}
+
+function selectMode(value: string): void {
+  const select = query<HTMLSelectElement>("[data-role='display-mode']");
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function pointer(type: string, clientX: number, clientY: number, pointerType = "mouse"): Event {

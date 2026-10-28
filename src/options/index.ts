@@ -11,6 +11,7 @@ import { ensureProviderIconStyles, providerIconMarkup } from "../shared/provider
 import { setupAutoTranslationControls } from "./auto-translation";
 import { renderProviderUsage, updateProviderScheduling } from "./provider-usage";
 import { setupSettingsNavigation } from "./navigation";
+import { setupShortcutSettings } from "./shortcuts";
 import { setupAppearanceControls } from "./appearance";
 import "../shared/appearance.css";
 import { normalizeSelectionTranslation, type DictionaryProvider, type SelectionTriggerStyle } from "../shared/dictionary";
@@ -18,8 +19,12 @@ import { RequestTemplateError, supportsRequestTemplate, validateRequestTemplate 
 import { readRequestTemplate, setupProviderTabs } from "./provider-advanced";
 import { isDoubaoBrowserSupported } from "../shared/doubao";
 import { formatDoubaoStatus, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
+import { renderUiIcons, uiIconMarkup } from "../shared/ui-icons";
+
+renderUiIcons();
 
 const settingsNavigation = setupSettingsNavigation(query<HTMLElement>(".settings"));
+const shortcutControls = setupShortcutSettings(query<HTMLElement>("#shortcutSettings"));
 const appearanceControls = setupAppearanceControls(query<HTMLElement>("#appearanceSettings"));
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
@@ -29,7 +34,6 @@ const concurrency = query<HTMLInputElement>("#concurrency");
 const pdfTranslationScope = query<HTMLSelectElement>("#pdfTranslationScope");
 const pdfTranslationPageRadius = query<HTMLInputElement>("#pdfTranslationPageRadius");
 const pdfTranslationPageRadiusField = query<HTMLElement>("#pdfTranslationPageRadiusField");
-const pdfTranslationScopeDescription = query<HTMLElement>("#pdfTranslationScopeDescription");
 const cacheEnabled = query<HTMLInputElement>("#cacheEnabled");
 const floatingBallEnabled = query<HTMLInputElement>("#floatingBallEnabled");
 const selectionTranslationEnabled = query<HTMLInputElement>("#selectionTranslationEnabled");
@@ -117,6 +121,9 @@ async function init(): Promise<void> {
     settingsNavigation.reveal(imageTranslationEnabled);
     imageTranslationEnabled.closest(".image-feature")?.scrollIntoView?.({ block: "center" });
   }
+  if (new URLSearchParams(location.search).get("paragraphTranslationNotice") === "refresh") {
+    setStatus("无法连接段落所在页面。请刷新刚才的网页，再右键点击正文段落翻译。");
+  }
 
   providerTrigger.addEventListener("click", () => setProviderMenuOpen(providerMenu.hidden));
   providerMenu.addEventListener("click", (event) => {
@@ -173,6 +180,7 @@ async function init(): Promise<void> {
 }
 
 function render(): void {
+  shortcutControls.render(settings.shortcuts, settings.shortcutEnabled);
   appearanceControls.render(settings.appearance);
   autoTranslationControls.render(settings.autoTranslation);
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
@@ -206,9 +214,6 @@ selectionTranslationEnabled.addEventListener("change", () => { selectionTranslat
 function updatePdfTranslationScope(): void {
   pdfTranslationPageRadiusField.hidden = pdfTranslationScope.value === "unlimited";
   pdfTranslationPageRadius.disabled = pdfTranslationPageRadiusField.hidden;
-  pdfTranslationScopeDescription.textContent = pdfTranslationPageRadiusField.hidden
-    ? "翻译整份 PDF，直到全部完成。已完成的同语言、同服务译文会保留。"
-    : "开始翻译后，默认处理当前页及前后各 5 页，最多 11 页。滚动后自动补译新范围，范围内完成后等待继续阅读。0 表示仅翻译当前页。";
 }
 
 function updateTranslationDisplayModeDescription(): void {
@@ -278,7 +283,7 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
           data-provider-id="${escapeAttr(provider.id)}"
           title="删除 ${escapeAttr(provider.label)}"
           aria-label="删除 ${escapeAttr(provider.label)}"
-        >-</button>
+        >${uiIconMarkup("trash")}</button>
       `}
     </div>
   `;
@@ -334,9 +339,6 @@ function renderProviderForm(): void {
     return;
   }
   if (supportsServiceMode(provider)) {
-    const recipient = { "google-web-translate": "Google", "microsoft-web-translate": "微软",
-      "tencent-transmart": "腾讯", "yandex-web-translate": "Yandex",
-      "volcengine-web-translate": "火山翻译", "mymemory": "MyMemory" }[provider.type];
     const api = translationApiOptions(provider);
     const fields = provider.type === "microsoft-web-translate"
       ? [["endpoint", "Endpoint", "url"], ["apiKey", "API Key", "password"], ["region", "Azure 区域（可选）", "text"]]
@@ -353,13 +355,10 @@ function renderProviderForm(): void {
     setProviderFormMarkup(provider, `
       <div class="grid">
         <label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label>
-        <label>使用方式 <select data-field="serviceMode" aria-controls="translationApiFields translationFreeHint">
+        <label>使用方式 <select data-field="serviceMode" aria-controls="translationApiFields">
           <option value="free" ${provider.serviceMode !== "api" ? "selected" : ""}>免费服务（默认）</option>
           <option value="api" ${provider.serviceMode === "api" ? "selected" : ""}>API 服务（自备凭据）</option>
         </select></label>
-      </div>
-      <div id="translationFreeHint" ${provider.serviceMode === "api" ? "hidden" : ""}>
-      <p class="hint">免费使用，无需注册或填写 API Key。待翻译文字由扩展直接发送给${recipient}；服务不可用时，可在翻译服务中切换其他选项。</p>
       </div>
       <div id="translationApiFields" ${provider.serviceMode !== "api" ? "hidden" : ""}>
         <p class="hint">${apiLabel}，额度和费用按服务商账号计算。切回免费服务会保留凭据。</p>
@@ -369,7 +368,6 @@ function renderProviderForm(): void {
     providerForm.querySelector<HTMLSelectElement>("[data-field='serviceMode']")!.addEventListener("change", event => {
       const useApi = (event.target as HTMLSelectElement).value === "api";
       providerForm.querySelector<HTMLElement>("#translationApiFields")!.hidden = !useApi;
-      providerForm.querySelector<HTMLElement>("#translationFreeHint")!.hidden = useApi;
     });
     return;
   }
@@ -585,7 +583,7 @@ function renderModelControl(provider: ModelProvider): string {
     <label for="providerModel">模型</label>
     <div class="model-toolbar">
       <select id="providerModel" data-field="model">${renderOptions(models, provider.model)}</select>
-      <button type="button" class="icon-button add-model" data-action="manage-model" title="添加或修改模型" aria-label="添加或修改模型">+</button>
+      <button type="button" class="icon-button add-model" data-action="manage-model" title="添加或修改模型" aria-label="添加或修改模型">${uiIconMarkup("plus")}</button>
       ${renderTestButton()}
     </div>
   </div>`;
@@ -911,6 +909,8 @@ function readSettingsFromForm(): ExtensionSettings {
   return {
     ...settings,
     appearance,
+    shortcuts: shortcutControls.read(),
+    shortcutEnabled: shortcutControls.readEnabled(),
     autoTranslation: autoTranslationControls.read(),
     targetLang: targetLang.value.trim() || "zh-CN",
     sourceLang: sourceLang.value.trim() || "auto",

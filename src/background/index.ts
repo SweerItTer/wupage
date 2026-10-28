@@ -6,6 +6,7 @@ import { clearTranslationCache, getTranslationDebugSnapshot, translateWithSettin
 import { requestOcr } from "./ocr";
 import { installedRevision } from "../ocr/model-store";
 import { initImageContextMenu } from "./image-context-menu";
+import { initParagraphContextMenu } from "./paragraph-context-menu";
 import { initializeOllamaCompatibility } from "./ollama-compatibility";
 import { requestLocal } from "./local";
 import { lookupDictionary, playDictionaryAudio, stopDictionaryAudio } from "./dictionary";
@@ -33,6 +34,11 @@ try {
 }
 void initializeOllamaCompatibility().catch((error: unknown) => console.warn("WuPage Ollama compatibility:", error));
 void initializeDoubaoCompatibility().catch((error: unknown) => console.warn("WuPage Doubao compatibility:", error));
+try {
+  initParagraphContextMenu();
+} catch (error: unknown) {
+  console.warn("WuPage paragraph menu:", error);
+}
 
 async function handleMessage(request: RuntimeRequest, sender: chrome.runtime.MessageSender): Promise<unknown> {
   switch (request.type) {
@@ -66,10 +72,16 @@ async function handleMessage(request: RuntimeRequest, sender: chrome.runtime.Mes
       await chrome.runtime.openOptionsPage();
       return null;
     case "GET_SETTINGS": {
-      const settings = await getSettings();
-      if (settings.imageTranslationEnabled && !await installedRevision()) {
-        settings.imageTranslationEnabled = false;
-        await saveSettings(settings);
+      let settings = await getSettings();
+      if (settings.imageTranslationEnabled) {
+        const installed = await installedRevision();
+        // Model checks may finish after another page has saved new settings.
+        // Return that version and only change its image toggle when needed.
+        settings = await getSettings();
+        if (!installed && settings.imageTranslationEnabled) {
+          settings.imageTranslationEnabled = false;
+          await saveSettings(settings);
+        }
       }
       return settings;
     }
@@ -120,7 +132,9 @@ async function handleMessage(request: RuntimeRequest, sender: chrome.runtime.Mes
       return { translation };
     }
     case "TRANSLATE_PAGE":
+    case "EXECUTE_TRANSLATION_SHORTCUT":
     case "TRANSLATE_CONTEXT_IMAGE":
+    case "TRANSLATE_CONTEXT_PARAGRAPH":
     case "CLEAR_TRANSLATION":
     case "GET_TRANSLATION_STATE":
     case "GET_PARAGRAPH_MODE":

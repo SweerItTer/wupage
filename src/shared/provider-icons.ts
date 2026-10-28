@@ -1,8 +1,9 @@
 import icons from "./provider-icons/icons.json";
 import type { ProviderConfig } from "./types";
+import { uiIconMarkup } from "./ui-icons";
 
-const generic = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 8-4 4 4 4m6-8 4 4-4 4m-2-11-2 14" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const local = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4" stroke-linecap="round"/></svg>';
+const generic = uiIconMarkup("code");
+const local = uiIconMarkup("display");
 const serviceMarks = {
   tencent: '<svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="6" fill="#1677ff"/><path d="M6 7h12v3h-4.5v8h-3v-8H6Z" fill="#fff"/></svg>',
   yandex: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fc3f1d"/><path d="m6 6 4.5 7v5h3v-5L18 6h-3.5L12 10.5 9.5 6Z" fill="#fff"/></svg>',
@@ -31,7 +32,8 @@ export function providerIconMarkup(provider: Pick<ProviderConfig, "type"> | unde
   }
   const svg = icon === "generic" ? generic : icon === "local" ? local
     : icon in serviceMarks ? serviceMarks[icon as keyof typeof serviceMarks] : icons[icon as keyof typeof icons];
-  return `<span class="wupage-provider-icon" data-provider-icon="${icon}" aria-hidden="true">${svg.replace("<svg ", '<svg aria-hidden="true" focusable="false" ')}</span>`;
+  const markup = icon === "generic" || icon === "local" ? svg : svg.replace("<svg ", '<svg aria-hidden="true" focusable="false" ');
+  return `<span class="wupage-provider-icon" data-provider-icon="${icon}" aria-hidden="true">${markup}</span>`;
 }
 
 export function ensureProviderIconStyles(): void {

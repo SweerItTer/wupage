@@ -54,7 +54,7 @@ describe("options provider controls", () => {
     });
     expect(document.querySelector("[data-field='apiKey']")).toBeNull();
     expect(document.querySelector("#providerTriggerIcon [data-provider-icon='microsoft-color']")).not.toBeNull();
-    expect(document.querySelector("#providerForm")?.textContent).toContain("无需注册或填写 API Key");
+    expect(document.querySelector("#translationFreeHint")).toBeNull();
     expect(document.querySelector("#performanceSettings #pdfTranslationScope")).not.toBeNull();
     expect(document.querySelector("#performanceSettings #chunkSize")).not.toBeNull();
     expect(document.querySelector("#providerForm [data-field='inheritPerformance']")).toBeNull();
@@ -72,13 +72,12 @@ describe("options provider controls", () => {
     query<HTMLSelectElement>("#pdfTranslationScope").value = "unlimited";
     query<HTMLSelectElement>("#pdfTranslationScope").dispatchEvent(new Event("change"));
     expect(query<HTMLElement>("#pdfTranslationPageRadiusField").hidden).toBe(true);
-    expect(query<HTMLElement>("#pdfTranslationScopeDescription").textContent).toContain("翻译整份 PDF");
+    expect(document.querySelector("#pdfTranslationScopeDescription")).toBeNull();
     click("#save");
     await vi.waitFor(() => expect(stored.pdfTranslationPageRadius).toBeNull());
     query<HTMLSelectElement>("#pdfTranslationScope").value = "nearby";
     query<HTMLSelectElement>("#pdfTranslationScope").dispatchEvent(new Event("change"));
     expect(query<HTMLInputElement>("#pdfTranslationPageRadius").disabled).toBe(false);
-    expect(query<HTMLElement>("#pdfTranslationScopeDescription").textContent).toContain("滚动后自动补译");
     query<HTMLInputElement>("#pdfTranslationPageRadius").value = "0";
     click("#save");
     await vi.waitFor(() => expect(stored.pdfTranslationPageRadius).toBe(0));

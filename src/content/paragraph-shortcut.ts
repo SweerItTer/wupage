@@ -1,0 +1,44 @@
+import { findTranslatableParagraph } from "./dom";
+import { translateParagraph } from "./paragraph-translation";
+
+const EXCLUDED = "input,textarea,select,button,[contenteditable]:not([contenteditable='false']),[role='textbox'],[role='combobox'],[role='button'],img,video,audio,canvas,svg,#wupage-selection-tools,#wupage-floating-hitbox,#wupage-floating-menu,#wupage-debug-panel,#wupage-image-tools,#wupage-shortcut-notice";
+
+function resolveParagraph(element: Element | null): Element | null {
+  if (!element || element === document.body || element === document.documentElement || element.closest(EXCLUDED)) return null;
+  const targetId = element.closest(".wupage-translation")?.getAttribute("data-wupage-translation-target");
+  if (targetId) return [...document.querySelectorAll("[data-wupage-target-id]")]
+    .find(target => target.getAttribute("data-wupage-target-id") === targetId) ?? null;
+  return findTranslatableParagraph(element);
+}
+
+/** Keep the saved shortcut ID while routing it through the shared paragraph engine. */
+export async function translateShortcutParagraphs(): Promise<void> {
+  const selection = window.getSelection();
+  const targets = new Set<Element>();
+  let selected = false;
+  for (let index = 0; index < (selection?.rangeCount ?? 0); index++) {
+    const range = selection!.getRangeAt(index);
+    if (range.collapsed) continue;
+    selected = true;
+    const collect = (node: Node): void => {
+      if (!node.textContent?.trim() || !range.intersectsNode(node)
+        || (node === range.startContainer && range.startOffset === node.textContent.length)
+        || (node === range.endContainer && range.endOffset === 0)) return;
+      const paragraph = resolveParagraph(node.parentElement);
+      if (paragraph) targets.add(paragraph);
+    };
+    const ancestor = range.commonAncestorContainer;
+    if (ancestor.nodeType === Node.TEXT_NODE) collect(ancestor);
+    else {
+      const walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) collect(walker.currentNode);
+    }
+  }
+  if (!selected) {
+    const hovered = [...document.querySelectorAll(":hover")].at(-1) ?? null;
+    const paragraph = resolveParagraph(hovered) ?? resolveParagraph(document.activeElement);
+    if (paragraph) targets.add(paragraph);
+  }
+  if (!targets.size) throw new Error("请将鼠标移到正文段落，或选中段落文字后再使用段落翻译快捷键。");
+  await Promise.all([...targets].map(target => translateParagraph(target)));
+}

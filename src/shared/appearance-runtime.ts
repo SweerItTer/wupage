@@ -15,6 +15,7 @@ export function setupAppearance(value: unknown, { extensionPage = true, live = t
     const tone = appearance.mode === "system" ? media?.matches ? "dark" : "light" : appearance.mode;
     const scheme = getColorScheme(appearance, tone);
     applyColorScheme(document.documentElement, scheme);
+    document.documentElement.style.setProperty("--wp-floating-opacity", String(appearance.floatingOpacity / 100));
     if (extensionPage) document.documentElement.style.colorScheme = tone;
     onChange?.(scheme);
   }

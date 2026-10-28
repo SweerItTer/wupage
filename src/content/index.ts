@@ -5,6 +5,7 @@ import {
   getParagraphMode,
   initFloatingBall,
   openDebugPanel,
+  refreshTranslationState,
   setFloatingBallEnabled,
   setParagraphMode
 } from "./floating";
@@ -22,6 +23,11 @@ import { SETTINGS_KEY } from "../shared/defaults";
 import { initAutoTranslation } from "./auto-translation";
 import { initSelectionTranslation } from "./selection-translation";
 import { setupAppearance } from "../shared/appearance-runtime";
+import { initParagraphContextTranslation } from "./paragraph-context";
+import { executeTranslationShortcut } from "./shortcuts";
+import { initKeyboardShortcuts } from "./keyboard-shortcuts";
+
+const translateContextParagraph = initParagraphContextTranslation(refreshTranslationState);
 
 let pageActionVersion = 0;
 
@@ -53,6 +59,7 @@ initFloatingBall();
 initImageTranslation();
 initAutoTranslation();
 initSelectionTranslation();
+initKeyboardShortcuts(executeTranslationShortcut);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   const change = changes[SETTINGS_KEY];
@@ -62,6 +69,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 async function handleMessage(request: RuntimeRequest): Promise<unknown> {
+  if (request.type === "EXECUTE_TRANSLATION_SHORTCUT") {
+    await executeTranslationShortcut(request.command);
+    return { handled: true };
+  }
+  if (request.type === "TRANSLATE_CONTEXT_PARAGRAPH") return translateContextParagraph(request.action);
   if (request.type === "TRANSLATE_CONTEXT_IMAGE") {
     return translateContextImage(request.srcUrl);
   }

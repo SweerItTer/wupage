@@ -7,6 +7,7 @@ import {
   type PDFPageProxy
 } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { renderUiIcons, uiIconUrl } from "../shared/ui-icons";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from "../shared/languages";
 import { enhanceProviderSelect } from "../shared/provider-picker";
@@ -42,6 +43,9 @@ import { validatePdfMathTranslation } from "./math";
 import { createFormulaImages, getFormulaViewportRect } from "./math-rendering";
 import { findReadingPage, selectPdfTranslationPages, takeNearestPage } from "./scheduling";
 import "./styles.css";
+
+renderUiIcons();
+document.documentElement.style.setProperty("--wp-select-arrow", uiIconUrl("arrow-down-03", "#edf5f1"));
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 

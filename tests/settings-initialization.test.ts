@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import { DEFAULT_SETTINGS, SETTINGS_KEY } from "../src/shared/defaults";
 import type { RuntimeRequest, RuntimeResponse } from "../src/shared/types";
 
 afterEach(() => {
@@ -30,7 +30,7 @@ describe.each(["popup", "options"] as const)("%s image translation initializatio
     return {
       feature: document.querySelector<HTMLElement>(".image-feature")!,
       toggle: document.querySelector<HTMLButtonElement | HTMLInputElement>(page === "popup" ? "#imageTranslation" : "#imageTranslationEnabled")!,
-      control: document.querySelector<HTMLElement>(page === "popup" ? "#imageTranslation .switch" : ".image-feature .setting-toggle-control")!
+      control: document.querySelector<HTMLElement>(page === "popup" ? "#imageTranslation" : ".image-feature .setting-toggle-control")!
     };
   }
 
@@ -51,6 +51,28 @@ describe.each(["popup", "options"] as const)("%s image translation initializatio
     });
     return sendMessage;
   }
+
+  if (page === "popup") it("keeps a newer saved configuration received before the initial settings read completes", async () => {
+    mount();
+    let finishSettings!: (value: RuntimeResponse) => void;
+    mockRuntime(new Promise(resolve => { finishSettings = resolve; }));
+    const listeners = new Set<(changes: Record<string, chrome.storage.StorageChange>, area: string) => void>();
+    vi.stubGlobal("chrome", { ...chrome, storage: { onChanged: {
+      addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => { listeners.add(listener); },
+      removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => { listeners.delete(listener); }
+    } } });
+    await loadPage();
+    const incoming = { ...structuredClone(DEFAULT_SETTINGS), sourceLang: "ja", targetLang: "en", activeProviderId: "deepseek",
+      autoTranslation: { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] } };
+    for (const listener of listeners) listener({ [SETTINGS_KEY]: { newValue: incoming } }, "local");
+    finishSettings({ ok: true, data: structuredClone(DEFAULT_SETTINGS) });
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>("#pageToggle")!.disabled).toBe(false));
+    expect(document.querySelector("#autoTranslation")!.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector<HTMLButtonElement>("#addAutoTranslationSite")!.hidden).toBe(false);
+    expect(document.querySelector<HTMLSelectElement>("#sourceLang")!.value).toBe("ja");
+    expect(document.querySelector<HTMLSelectElement>("#targetLang")!.value).toBe("en");
+    expect(document.querySelector<HTMLSelectElement>("#provider")!.value).toBe("deepseek");
+  });
 
   it.each([true, false])("reveals the saved value %s after a delayed settings read", async (enabled) => {
     const { feature, toggle, control } = mount();

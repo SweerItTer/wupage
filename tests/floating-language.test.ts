@@ -161,12 +161,12 @@ describe("floating language controls", () => {
     expect(getComputedStyle(languageSelect).transform).toBe("none");
     expect(getComputedStyle(languageSelect).whiteSpace).toBe("nowrap");
     expect(getComputedStyle(languageSelect).color).toBe("rgba(0, 0, 0, 0)");
-    expect(getComputedStyle(languageValue).display).toBe("flex");
+    expect(getComputedStyle(languageValue).display).toBe("block");
     expect(getComputedStyle(languageValue).alignItems).toBe("center");
-    expect(getComputedStyle(languageValue).justifyContent).toBe("center");
-    expect(getComputedStyle(languageValue).textAlign).toBe("center");
+    expect(getComputedStyle(languageValue).justifyContent).toBe("flex-start");
+    expect(getComputedStyle(languageValue).textAlign).toBe("left");
     expect(getComputedStyle(direction).position).toBe("static");
-    expect(getComputedStyle(direction).width).toBe("24px");
+    expect(getComputedStyle(direction).width).toBe("18px");
     expect(getComputedStyle(direction).height).toBe("40px");
     expect(getComputedStyle(direction).transform).toBe("none");
     expect(getComputedStyle(chevron).position).toBe("absolute");
@@ -262,7 +262,7 @@ describe("floating language controls", () => {
     button.dispatchEvent(pointerEvent("pointerup", 621, 321));
     button.click();
     expect(menu.hidden).toBe(true);
-    expect(vi.mocked(sendRuntimeRequest).mock.calls.every(([request]) => request.type === "GET_SETTINGS")).toBe(true);
+    expect(vi.mocked(sendRuntimeRequest).mock.calls.every(([request]) => ["GET_SETTINGS", "GET_OCR_STATUS"].includes(request.type))).toBe(true);
     hitbox.dispatchEvent(new Event("pointerenter"));
     await vi.waitFor(() => expect(menu.hidden).toBe(false));
   });
