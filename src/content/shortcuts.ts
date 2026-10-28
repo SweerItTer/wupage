@@ -5,7 +5,7 @@ import { hasPageTranslations } from "./dom";
 import { getParagraphMode, refreshTranslationState, setParagraphMode } from "./floating";
 import { getPageTranslationState, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation } from "./page-translation";
 import { sendRuntimeRequest } from "./runtime";
-import { translateSelectedText } from "./selection-translation";
+import { translateShortcutParagraphs } from "./paragraph-shortcut";
 
 let pageRevision = 0;
 let startingPage = false;
@@ -16,7 +16,10 @@ let noticeTimer: number | undefined;
 export async function executeTranslationShortcut(command: TranslationShortcut): Promise<void> {
   try {
     if (command === "toggle-page-translation") await togglePage();
-    else if (command === "translate-selection") await translateSelectedText();
+    else if (command === "translate-selection") {
+      await translateShortcutParagraphs();
+      refreshTranslationState();
+    }
     else if (command === "toggle-paragraph-mode") {
       const enabled = !getParagraphMode();
       await setParagraphMode(enabled);

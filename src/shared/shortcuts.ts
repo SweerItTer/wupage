@@ -1,6 +1,6 @@
 export const TRANSLATION_SHORTCUTS = [
   { name: "toggle-page-translation", label: "翻译全文 / 恢复原文" },
-  { name: "translate-selection", label: "翻译选中文本" },
+  { name: "translate-selection", label: "段落翻译" },
   { name: "toggle-paragraph-mode", label: "开启 / 关闭段落模式" },
   { name: "cycle-display-mode", label: "切换译文显示模式" }
 ] as const;

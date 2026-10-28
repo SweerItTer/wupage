@@ -40,9 +40,11 @@ npm run build      # 生成生产构建到 dist/
 
 `src/content/keyboard-shortcuts.ts` 在顶层网页捕获按键，根据已加载的配置触发 `src/content/shortcuts.ts` 中共用的翻译动作。使用 `KeyboardEvent.code` 匹配字母和数字物理键；忽略 IME、AltGr、输入和编辑区域、已处理事件与重复执行；仅在匹配时阻止网页默认行为。配置变更通过存储事件同步，初始读取不会覆盖较新的存储变更。快捷键仅作用于普通网页正文，不作用于地址栏、嵌入框架或 PDF 查看器。全文开始前的异步读取可被再次按键取消，过期结果不覆盖恢复原文后的提示，连续切换显示模式按保存顺序处理。
 
-相关单元回归覆盖录入、取消、清空、默认值、重复及保留组合键校验、设置保存和分类草稿、即时改键与输入保护、快速启停、显示模式顺序和划词翻译。
+段落翻译快捷键复用 `src/content/paragraph-translation.ts` 的原位翻译与恢复逻辑。`src/content/paragraph-shortcut.ts` 将选区内的文字映射为完整段落并去重，无选区时使用鼠标所在或获得焦点的正文段落；不依赖段落模式、右键翻译或划词翻译开关。配置键沿用 `translate-selection`，保留已有自定义按键与开关。
 
-`npm run test:shortcuts` 在构建后加载真实扩展，使用独立浏览器资料和本地模拟服务验证设置页录入与保存、无需刷新网页的改键和停用、实际键盘事件触发全文与选区翻译、译文模式复用、段落模式、输入保护与窄屏布局。支持 `PLAYWRIGHT_MODULE`、`CHROME_TEST_BROWSER` 和 `PDF_TEST_BROWSER`，报告及截图写入 `.npm-cache/shortcuts/`。浏览器和系统保留快捷键不由网页拦截，跨系统组合仍需在目标环境确认。
+相关单元回归覆盖录入、取消、清空、默认值、重复及保留组合键校验、设置保存和分类草稿、即时改键与输入保护、快速启停、显示模式顺序和段落翻译。
+
+`npm run test:shortcuts` 在构建后加载真实扩展，使用独立浏览器资料和本地模拟服务验证设置页录入与保存、无需刷新网页的改键和停用、实际键盘事件触发全文与段落翻译、译文模式复用、段落模式、输入保护与窄屏布局。支持 `PLAYWRIGHT_MODULE`、`CHROME_TEST_BROWSER` 和 `PDF_TEST_BROWSER`，报告及截图写入 `.npm-cache/shortcuts/`。浏览器和系统保留快捷键不由网页拦截，跨系统组合仍需在目标环境确认。
 
 ### Firefox 构建与验证
 

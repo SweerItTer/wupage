@@ -12,7 +12,7 @@ vi.mock("../src/content/page-translation", () => ({ getPageTranslationState: moc
 vi.mock("../src/content/dom", () => ({ hasPageTranslations: mocks.hasTranslations }));
 vi.mock("../src/content/floating", () => ({ getParagraphMode: mocks.paragraph, setParagraphMode: mocks.setParagraph, refreshTranslationState: mocks.refresh }));
 vi.mock("../src/content/runtime", () => ({ sendRuntimeRequest: mocks.send }));
-vi.mock("../src/content/selection-translation", () => ({ translateSelectedText: mocks.selection }));
+vi.mock("../src/content/paragraph-shortcut", () => ({ translateShortcutParagraphs: mocks.selection }));
 
 let settings: ExtensionSettings;
 let active: boolean;
@@ -81,10 +81,15 @@ describe("translation shortcut actions", () => {
     mocks.paragraph.mockReturnValue(true);
     await execute("toggle-paragraph-mode"); expect(mocks.setParagraph).toHaveBeenLastCalledWith(false);
   });
-  it("shows selection errors in a status message without throwing to the background", async () => {
-    mocks.selection.mockRejectedValueOnce(new Error("请先选中网页正文"));
+  it("uses the paragraph engine for the saved selection shortcut and refreshes reading controls", async () => {
+    await execute("translate-selection");
+    expect(mocks.selection).toHaveBeenCalledOnce();
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
+  it("shows paragraph targeting errors in a status message without throwing to the background", async () => {
+    mocks.selection.mockRejectedValueOnce(new Error("请先选中正文段落"));
     await expect(execute("translate-selection")).resolves.toBeUndefined();
-    expect(notice()).toContain("请先选中网页正文");
+    expect(notice()).toContain("请先选中正文段落");
     expect(document.getElementById("wupage-shortcut-notice")?.shadowRoot?.querySelector("[role='status']")?.getAttribute("data-error")).toBe("true");
   });
 });
