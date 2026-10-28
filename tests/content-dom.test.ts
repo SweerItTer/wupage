@@ -6,6 +6,7 @@ import {
   clearTranslationPlaceholders,
   clearTranslations,
   collectParagraphTextSegments,
+  collectAdditionalTextSegments,
   collectTextSegments,
   findTranslatableParagraph,
   hasPageTranslations,
@@ -18,6 +19,7 @@ import {
   renderTranslations,
   setTranslationDisplayMode
 } from "../src/content/dom";
+import { injectContentStyles } from "../src/content/styles";
 
 describe("content DOM translation extraction", () => {
   it.each(["Label", "State", "Counter", "layout-with-breadcrumbs", "withBreadcrumbs"])
@@ -244,6 +246,179 @@ describe("content DOM translation extraction", () => {
     expect(source.textContent).toBe("The page supplied an updated opening sentence.Second authored sentence on its own line.");
     expect(source.querySelectorAll("br")).toHaveLength(1);
     expect(document.querySelector(".wupage-translation")).toBeNull();
+  });
+
+  describe("host-managed replacement recovery", () => {
+    const original = "News and analysis from around the world.";
+    const translated = "世界各地のニュースと解説をお届けします。";
+
+    afterEach(() => {
+      clearTranslations();
+      document.getElementById("wupage-translation-style")?.remove();
+    });
+
+    function mount(style = ""): HTMLElement {
+      stubLayout();
+      vi.mocked(window.getComputedStyle).mockRestore();
+      injectContentStyles();
+      document.body.innerHTML = `<main><p class="host-wrapper" style="${style}"><span class="host-source" style="display:block">${original}</span></p></main>`;
+      return document.querySelector<HTMLElement>(".host-source")!;
+    }
+
+    function recover(source: HTMLElement) {
+      const [segment] = collectTextSegments();
+      expect(segment.text).toBe(original);
+      renderTranslations([{ id: segment.id, text: translated }], "replace");
+      source.replaceChildren(document.createTextNode(original));
+      expect(invalidateStaleSegments([source])).not.toContain(segment.id);
+      return segment;
+    }
+
+    it("preserves standalone identity without repeated mutations when the host rebuilds its text", () => {
+      const source = mount();
+      const segment = recover(source);
+      const output = document.querySelector<HTMLElement>(".wupage-translation")!;
+      expect(source.textContent).toBe(original);
+      expect(source.contains(output)).toBe(false);
+      expect(output.parentElement).toBe(source.parentElement);
+      expect(output.textContent).toBe(translated);
+      expect(window.getComputedStyle(source).visibility).toBe("hidden");
+      expect(window.getComputedStyle(source).alignSelf).toBe("start");
+      expect(window.getComputedStyle(output).visibility).toBe("visible");
+      source.replaceChildren(document.createTextNode(original.slice(0, 8)), document.createTextNode(original.slice(8)));
+      expect(invalidateStaleSegments([source])).not.toContain(segment.id);
+      expect(collectAdditionalTextSegments(document.body)).toEqual([]);
+      expect(document.querySelectorAll(".wupage-translation")).toHaveLength(1);
+      const observer = new MutationObserver(() => {});
+      observer.observe(source.parentElement!, { attributes: true, characterData: true, childList: true, subtree: true });
+      for (let index = 0; index < 5; index++) expect(invalidateStaleSegments([source])).toEqual([]);
+      expect(observer.takeRecords()).toEqual([]);
+      observer.disconnect();
+    });
+
+
+    it("restores host classes and inline styles exactly and remembers safe rendering after clearing results", () => {
+      const source = mount("margin: 3px 0");
+      const originalHtml = document.querySelector("main")!.innerHTML;
+      recover(source);
+      source.classList.add("host-updated");
+      setTranslationDisplayMode("bilingual");
+      expect(window.getComputedStyle(source).visibility).toBe("visible");
+      expect(source.className).toBe("host-source host-updated");
+      setTranslationDisplayMode("replace");
+      expect(source.textContent).toBe(original);
+      expect(window.getComputedStyle(source).visibility).toBe("hidden");
+      source.classList.remove("host-updated");
+      clearTranslations();
+      expect(document.querySelector("main")!.innerHTML).toBe(originalHtml);
+
+      const [fresh] = collectTextSegments();
+      renderTranslations([{ id: fresh.id, text: "新的目标语言译文。" }], "replace");
+      expect(source.textContent).toBe(original);
+      expect(window.getComputedStyle(source).visibility).toBe("hidden");
+      expect(source.contains(document.querySelector(".wupage-translation"))).toBe(false);
+    });
+
+
+    it("releases a recovered source moved into an unsafe wrapper even when its text nodes are unchanged", () => {
+      const source = mount();
+      const oldContainer = source.parentElement!;
+      const segment = recover(source);
+      const destination = document.createElement("div");
+      destination.innerHTML = "<button>Another control</button>";
+      document.querySelector("main")!.append(destination);
+      destination.append(source);
+
+      expect(invalidateStaleSegments()).toContain(segment.id);
+      expect(document.querySelector(".wupage-translation")).toBeNull();
+      expect(source.className).toBe("host-source");
+      expect(oldContainer.className).toBe("host-wrapper");
+      expect(window.getComputedStyle(source).visibility).toBe("visible");
+      expect(destination.querySelector("button")!.textContent).toBe("Another control");
+    });
+
+    it("restores the host wrapper when unrelated content or a new layout makes isolation unsafe", () => {
+      const source = mount();
+      const segment = recover(source);
+      const container = source.parentElement!;
+      container.style.display = "flex";
+      container.insertAdjacentHTML("beforeend", "<img alt='' src='new-image.png'>");
+
+      expect(invalidateStaleSegments()).toContain(segment.id);
+      expect(container.className).toBe("host-wrapper");
+      expect(container.style.display).toBe("flex");
+      expect(source.className).toBe("host-source");
+      expect(container.querySelector("img")).not.toBeNull();
+      expect(document.querySelector(".wupage-translation")).toBeNull();
+    });
+
+    it("does not retain a grouped segment's old viewport anchor after moving its source", () => {
+      const source = mount();
+      source.replaceChildren(document.createTextNode(original), document.createTextNode("..."));
+      const [segment] = collectTextSegments();
+      expect(segment.element).toBe(source.parentElement);
+      renderTranslations([{ id: segment.id, text: translated }], "replace");
+      source.replaceChildren(document.createTextNode(original), document.createTextNode("..."));
+      expect(invalidateStaleSegments([source])).not.toContain(segment.id);
+      const destination = document.createElement("p");
+      document.querySelector("main")!.append(destination);
+      destination.append(source);
+
+      expect(invalidateStaleSegments()).toContain(segment.id);
+      expect(window.getComputedStyle(source).visibility).toBe("visible");
+      const [fresh] = collectAdditionalTextSegments(document.body);
+      expect(fresh.id).not.toBe(segment.id);
+      expect(fresh.element).toBe(destination);
+      expect(fresh.text).toBe(original + "...");
+    });
+
+    it.each([false, true])("does not expose text hidden by the host after recovery=%s", (alreadyRecovered) => {
+      const source = mount();
+      const [segment] = collectTextSegments();
+      renderTranslations([{ id: segment.id, text: translated }], "replace");
+      if (alreadyRecovered) {
+        source.replaceChildren(document.createTextNode(original));
+        expect(invalidateStaleSegments([source])).not.toContain(segment.id);
+      }
+      source.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)";
+      const hiddenStyle = source.getAttribute("style");
+      source.replaceChildren(document.createTextNode(original));
+      expect(invalidateStaleSegments([source])).toContain(segment.id);
+      expect(document.querySelector(".wupage-translation")).toBeNull();
+      expect(source.parentElement!.className).toBe("host-wrapper");
+      expect(source.className).toBe("host-source");
+      expect(source.getAttribute("style")).toBe(hiddenStyle);
+      expect(source.textContent).toBe(original);
+    });
+
+    it("does not replace a host's existing grid layout", () => {
+      const display = "grid";
+      const source = mount(`display:${display}`);
+      const [segment] = collectTextSegments();
+      renderTranslations([{ id: segment.id, text: translated }], "replace");
+      source.replaceChildren(document.createTextNode(original));
+      expect(invalidateStaleSegments([source])).toContain(segment.id);
+      expect(source.parentElement!.className).toBe("host-wrapper");
+      expect(source.className).toBe("host-source");
+      expect(source.parentElement!.style.display).toBe(display);
+    });
+
+    it.each([
+      '<button>Open story</button>',
+      ' Other unrelated text.'
+    ])("does not cover unrelated wrapper content: %s", (sibling) => {
+      const source = mount();
+      source.parentElement!.insertAdjacentHTML("beforeend", sibling);
+      const segments = collectTextSegments();
+      renderTranslations(segments.map(({ id }) => ({ id, text: translated })), "replace");
+      source.replaceChildren(document.createTextNode(original));
+      invalidateStaleSegments([source]);
+      expect(source.parentElement!.classList.contains("wupage-stable-replacement")).toBe(false);
+      expect(source.classList.contains("wupage-stable-source")).toBe(false);
+      clearTranslations();
+      expect(source.parentElement!.querySelector("button")?.outerHTML ?? source.parentElement!.textContent)
+        .toContain(sibling.includes("<button") ? "Open story" : "Other unrelated text.");
+    });
   });
 
   it.each(["span", "div"])("keeps translations inside a %s that owns a flex layout column", (tag) => {
@@ -1269,6 +1444,75 @@ describe("content DOM translation extraction", () => {
       .toBe("选择最佳 PC 的技巧");
     expect([...document.querySelectorAll<HTMLElement>(".wupage-translation")]
       .map((node) => node.dataset.wupageMode)).toEqual(["inline", "inline", "inline"]);
+  });
+
+  it.each(["grid", "flex", "inline-grid", "inline-flex"])("keeps split control labels inside their %s layout cell", (display) => {
+    document.body.innerHTML = `<main><button aria-label="Optimized for: Balance" aria-expanded="false">
+      <span class="content"><span class="label"></span></span>
+      <span class="action"><svg aria-hidden="true"></svg></span>
+    </button></main>`;
+    const label = document.querySelector(".label")!;
+    const nodes = [document.createTextNode("Optimized for: "), document.createTextNode("Balance")];
+    label.append(...nodes);
+    stubLayout("", { style: element => ({ display: element.matches(".content") ? display : "inline" }) });
+    const original = document.querySelector("main")!.innerHTML;
+    const [segment, ...other] = collectTextSegments();
+    expect(other).toHaveLength(0);
+    expect(segment.text).toBe("Optimized for: Balance");
+    expect(segment.element).toBe(label);
+    renderTranslations([{ id: segment.id, text: "针对：平衡进行了优化" }], "replace");
+    for (const mode of ["replace", "bilingual", "bilingual-accent"] as const) {
+      setTranslationDisplayMode(mode);
+      expect(document.querySelector(".content > .wupage-translation")).toBeNull();
+      expect(label.querySelector(".wupage-translation")?.textContent).toBe("针对：平衡进行了优化");
+      expect(document.querySelector("button")?.getAttribute("aria-label")).toBe("Optimized for: Balance");
+    }
+    clearTranslations();
+    expect([...label.childNodes]).toEqual(nodes);
+    expect(document.querySelector("main")!.innerHTML).toBe(original);
+  });
+
+  it.each(["menuitemradio", "menuitemcheckbox", "option"])("keeps %s labels and descriptions in separate layout fields", (role) => {
+    document.body.innerHTML = `<main role="main"><ul><li role="${role}" aria-describedby="description" tabindex="0">
+      <div class="layout"><svg aria-hidden="true"></svg><div class="fields">
+        <span id="label"><span>Auto</span></span>
+        <span id="description"><span>Optimized for Balance</span></span>
+      </div></div></li></ul></main>`;
+    stubLayout("", { style: element => ({ display: element.matches(".layout") ? "grid" : element.matches(".fields") ? "flex" : "block" }) });
+    const original = document.querySelector("main")!.innerHTML;
+    const segments = collectTextSegments();
+    expect(segments.map(({ text }) => text)).toEqual(["Auto", "Optimized for Balance"]);
+    renderTranslations(segments.map(({ id }, index) => ({ id, text: ["自动", "针对平衡进行了优化"][index] })), "replace");
+    for (const mode of ["replace", "bilingual", "bilingual-accent"] as const) {
+      setTranslationDisplayMode(mode);
+      expect(document.querySelector("li > .wupage-translation, .layout > .wupage-translation, .fields > .wupage-translation")).toBeNull();
+      expect(document.querySelector("#label .wupage-translation")?.textContent).toBe("自动");
+      expect(document.querySelector("#description .wupage-translation")?.textContent).toBe("针对平衡进行了优化");
+    }
+    clearTranslations();
+    expect(document.querySelector("main")!.innerHTML).toBe(original);
+  });
+
+  it.each(["/", "Ctrl K"])("preserves the %s shortcut when replacing a control label", (shortcut) => {
+    document.body.innerHTML = `<header><button><svg aria-hidden="true"></svg>
+      <span id="search-label">Type <kbd>${shortcut}</kbd> to search</span></button></header>`;
+    stubLayout();
+    const original = document.querySelector("header")!.innerHTML;
+    const key = document.querySelector("kbd")!;
+    const [segment, ...other] = collectTextSegments();
+    expect(other).toHaveLength(0);
+    expect(segment.text).toBe("Type ⟪WUPAGE0⟫ to search");
+    renderTranslations([{ id: segment.id, text: "输入 ⟪WUPAGE0⟫ 进行搜索" }], "replace");
+    expect(key.classList.contains("wupage-replaced-source")).toBe(true);
+    expect(document.querySelector("#search-label .wupage-translation kbd")?.textContent).toBe(shortcut);
+    expect(document.querySelector("button > .wupage-translation")).toBeNull();
+    setTranslationDisplayMode("bilingual");
+    expect(key.classList.contains("wupage-replaced-source")).toBe(false);
+    setTranslationDisplayMode("replace");
+    expect(key.classList.contains("wupage-replaced-source")).toBe(true);
+    clearTranslations();
+    expect(document.querySelector("kbd")).toBe(key);
+    expect(document.querySelector("header")!.innerHTML).toBe(original);
   });
 
   it("translates custom-element navigation items exposed through listitem roles", () => {

@@ -7,9 +7,11 @@ vi.mock("../src/content/runtime", () => ({
   sendRuntimeRequest: vi.fn()
 }));
 
-import { clearPageTranslation, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation } from "../src/content/page-translation";
+import { clearPageTranslation, getPageTranslationState, hidePageTranslation, setPageTranslationDisplayMode, startPageTranslation, updatePageTranslationSettings } from "../src/content/page-translation";
 import { sendRuntimeRequest } from "../src/content/runtime";
 import { collectParagraphTextSegments, renderTranslations } from "../src/content/dom";
+import { ProviderError } from "../src/shared/errors";
+import { injectContentStyles } from "../src/content/styles";
 
 const settings: ExtensionSettings = {
   targetLang: "zh-CN",
@@ -200,6 +202,87 @@ describe("viewport page translation", () => {
     expect(document.body.textContent).not.toContain("Cancelled response");
   });
 
+  it("pauses the page queue on a login error and restores completed work when the user retries", async () => {
+    const texts = ["First source paragraph. ", "Second source paragraph. ", "Third source paragraph. "]
+      .map((text) => text.repeat(40).trim());
+    document.body.innerHTML = `<main>${texts.map((text, index) => `<p id="p${index}" data-top="${100 + index * 100}">${text}</p>`).join("")}</main>`;
+    const options: ExtensionSettings = {
+      ...settings,
+      activeProviderId: "doubao-web",
+      translationDisplayMode: "replace",
+      providers: [{ id: "doubao-web", type: "doubao-web", label: "豆包" }]
+    };
+    translateNormally();
+    const translate = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest)
+      .mockImplementationOnce(translate)
+      .mockRejectedValueOnce(new ProviderError("请登录豆包后重新检测。", "login-required"));
+
+    const failed = await startPageTranslation(options);
+    expect(failed).toMatchObject({ translated: 1, failed: 1, remaining: 1, errorCode: "login-required" });
+    expect(failed.retryAt).toBeUndefined();
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, errorCode: "login-required" });
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("#p1")!.textContent).toBe(texts[1]);
+    expect(document.querySelector("#p2")!.textContent).toBe(texts[2]);
+    expect(document.querySelector(".wupage-translation-pending")).toBeNull();
+
+    const addedText = "New source paragraph. ".repeat(40).trim();
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", `<p data-top="400">${addedText}</p>`);
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, remaining: 2 });
+
+    hidePageTranslation();
+    expect(document.querySelector(".wupage-translation")).toBeNull();
+    expect(Array.from(document.querySelectorAll("main p"), (paragraph) => paragraph.textContent)).toEqual([...texts, addedText]);
+    expect(getPageTranslationState().active).toBe(false);
+    vi.mocked(sendRuntimeRequest).mockClear();
+    translateNormally(); // The explicit login/check recovery is handled by the background provider.
+    const recovered = await startPageTranslation(options);
+    expect(recovered).toMatchObject({ translated: 4, cached: 1, failed: 0, remaining: 0 });
+    expect(recovered.errorCode).toBeUndefined();
+    expect(recovered.retryAt).toBeUndefined();
+    const requested = vi.mocked(sendRuntimeRequest).mock.calls.flatMap(([request]) => request.type === "TRANSLATE_BATCH" ? request.texts : []);
+    expect(requested).toEqual([texts[1], texts[2], addedText]);
+    expect(document.querySelectorAll(".wupage-translation:not(.wupage-translation-pending)")).toHaveLength(4);
+  });
+
+  it("returns the rate-limit deadline, preserves originals, and requires an explicit retry after cooldown", async () => {
+    const texts = ["First source paragraph. ", "Second source paragraph. ", "Third source paragraph. "]
+      .map((text) => text.repeat(40).trim());
+    document.body.innerHTML = `<main>${texts.map((text, index) => `<p data-top="${100 + index * 100}">${text}</p>`).join("")}</main>`;
+    const options: ExtensionSettings = {
+      ...settings,
+      activeProviderId: "doubao-web",
+      translationDisplayMode: "replace",
+      providers: [{ id: "doubao-web", type: "doubao-web", label: "豆包" }]
+    };
+    const startedAt = 1_700_000_000_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(startedAt);
+    vi.mocked(sendRuntimeRequest).mockRejectedValue(new ProviderError("豆包请求受限。", "rate-limited", 5000));
+    const failed = await startPageTranslation(options);
+    expect(failed).toMatchObject({ translated: 0, failed: 1, remaining: 2, errorCode: "rate-limited", retryAt: startedAt + 5000 });
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, errorCode: "rate-limited", retryAt: startedAt + 5000 });
+    expect(Array.from(document.querySelectorAll("main p"), (paragraph) => paragraph.textContent)).toEqual(texts);
+    expect(document.querySelector(".wupage-translation")).toBeNull();
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+
+    clock.mockReturnValue(startedAt + 6000);
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+    translateNormally();
+    const recovered = await startPageTranslation(options, false);
+    expect(recovered).toMatchObject({ translated: 3, failed: 0, remaining: 0 });
+    expect(recovered.errorCode).toBeUndefined();
+    expect(recovered.retryAt).toBeUndefined();
+    expect(getPageTranslationState()).toMatchObject({ pending: 0, failed: 0, translated: 3 });
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(4);
+    expect(document.querySelectorAll(".wupage-translation:not(.wupage-translation-pending)")).toHaveLength(3);
+  });
+
   it("requests placeholder validation for rich text before replacing its source", async () => {
     document.body.innerHTML = `<main><p>Read <code>theGuide()</code> carefully.</p></main>`;
     vi.mocked(sendRuntimeRequest).mockImplementation(async (request: RuntimeRequest) => {
@@ -211,6 +294,134 @@ describe("viewport page translation", () => {
     expect(document.querySelector(".wupage-translation code")?.textContent).toBe("theGuide()");
     clearPageTranslation();
     expect(document.querySelector("p")?.textContent).toBe("Read theGuide() carefully.");
+  });
+
+  describe("replacement mode with host-managed news teasers", () => {
+    const prefix = "Reports and analysis from correspondents around the world";
+    const translation = "世界各地の記者がお届けする最新のニュースと詳しい解説を紹介します。";
+    const options = { ...settings, sourceLang: "en", targetLang: "ja", translationDisplayMode: "replace" as const };
+    const hostObservers: MutationObserver[] = [];
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(window.getComputedStyle).mockRestore();
+      injectContentStyles();
+      vi.mocked(sendRuntimeRequest).mockResolvedValue({ translations: [translation], cached: 1 });
+    });
+
+    afterEach(() => {
+      hostObservers.splice(0).forEach((observer) => observer.disconnect());
+      vi.useRealTimers();
+      document.getElementById("wupage-translation-style")?.remove();
+    });
+
+    function readSource(source: Element): string {
+      return Array.from(source.childNodes).filter((node) => node instanceof Text)
+        .map((node) => node.textContent).join("");
+    }
+
+    function mountTeaser() {
+      document.body.innerHTML = '<main><article><p class="teaser"><span style="display:block"></span></p></article></main>';
+      const source = document.querySelector<HTMLElement>(".teaser > span")!;
+      source.append(document.createTextNode(prefix), document.createTextNode("..."));
+      const host = { source, writes: 0 };
+      // BBC's resize-driven truncator rebuilds text and ellipsis nodes after
+      // replacement clears its source. Cap rewrites so regressions cannot hang.
+      const observer = new MutationObserver(() => {
+        if (readSource(source).trim() || host.writes >= 8) return;
+        host.writes += 1;
+        source.replaceChildren(document.createTextNode(prefix), document.createTextNode("..."));
+      });
+      observer.observe(source, { subtree: true, characterData: true, childList: true });
+      hostObservers.push(observer);
+      return host;
+    }
+
+    function requestedTexts(): string[] {
+      return vi.mocked(sendRuntimeRequest).mock.calls.flatMap(([request]) =>
+        request.type === "TRANSLATE_BATCH" ? request.texts : []);
+    }
+
+    it("settles source rewrites and scrolling without new translations or growing counters", async () => {
+      const host = mountTeaser();
+      const { source } = host;
+      await startPageTranslation(options);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(host.writes).toBe(1);
+      expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+      expect(getPageTranslationState()).toMatchObject({ translated: 1, cached: 1, pending: 0, remaining: 0, failed: 0 });
+      expect(readSource(source)).toBe(prefix + "...");
+      const output = document.querySelector<HTMLElement>(".wupage-translation")!;
+      expect(output.textContent).toBe(translation);
+      expect(source.contains(output)).toBe(false);
+      expect(window.getComputedStyle(source).visibility).toBe("hidden");
+      expect(window.getComputedStyle(output).visibility).toBe("visible");
+
+      for (let index = 0; index < 3; index++) {
+        source.replaceChildren(document.createTextNode(prefix), document.createTextNode("..."));
+        window.dispatchEvent(new Event("scroll"));
+        await vi.advanceTimersByTimeAsync(250);
+      }
+      expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+      expect(getPageTranslationState()).toMatchObject({ translated: 1, cached: 1, pending: 0 });
+      expect(document.querySelectorAll(".wupage-translation")).toHaveLength(1);
+      expect(requestedTexts().every((text) => !text.includes(translation))).toBe(true);
+    });
+
+    it("still translates real news updates and newly inserted cards after recovery", async () => {
+      const host = mountTeaser();
+      const { source } = host;
+      await startPageTranslation(options);
+      await vi.advanceTimersByTimeAsync(500);
+      const updated = "A different report with new details and a new headline";
+      source.replaceChildren(document.createTextNode(updated), document.createTextNode("..."));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(requestedTexts()).toHaveLength(2);
+      expect(requestedTexts()[1]).toContain(updated);
+      expect(readSource(source)).toBe(updated + "...");
+      expect(host.writes).toBe(1);
+      document.querySelector("article")!.insertAdjacentHTML("beforeend", "<p>A newly published story.</p>");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(requestedTexts()).toHaveLength(3);
+      expect(requestedTexts()[2]).toBe("A newly published story.");
+      expect(getPageTranslationState().pending).toBe(0);
+    });
+
+    it("preserves safe rendering across display modes, restoring originals and changing language", async () => {
+      const host = mountTeaser();
+      const { source } = host;
+      const originalStyle = source.getAttribute("style");
+      await startPageTranslation(options);
+      await vi.advanceTimersByTimeAsync(500);
+
+      for (const mode of ["bilingual", "bilingual-accent", "replace"] as const) {
+        setPageTranslationDisplayMode(mode);
+        await vi.advanceTimersByTimeAsync(300);
+        expect(readSource(source)).toBe(prefix + "...");
+        expect(window.getComputedStyle(source).visibility).toBe(mode === "replace" ? "hidden" : "visible");
+      }
+      hidePageTranslation();
+      expect(source.getAttribute("style")).toBe(originalStyle);
+      expect(window.getComputedStyle(source).visibility).toBe("visible");
+      expect(document.querySelector(".wupage-translation")).toBeNull();
+      await startPageTranslation(options);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(host.writes).toBe(1);
+      expect(sendRuntimeRequest).toHaveBeenCalledTimes(1);
+      expect(getPageTranslationState()).toMatchObject({ translated: 1, cached: 1, pending: 0 });
+
+      updatePageTranslationSettings({ ...options, targetLang: "fr" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(host.writes).toBe(1);
+      expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(sendRuntimeRequest).mock.calls[1][0]).toMatchObject({ targetLang: "fr" });
+      expect(requestedTexts().at(-1)).toContain(prefix);
+      expect(readSource(source)).toBe(prefix + "...");
+      expect(window.getComputedStyle(source).visibility).toBe("hidden");
+      expect(getPageTranslationState()).toMatchObject({ translated: 1, cached: 1, pending: 0 });
+    });
   });
 
   it("does not rescan multiline post translations as source after unrelated mutations", async () => {
@@ -778,6 +989,72 @@ describe("viewport page translation", () => {
 
     expect(currentScrollY).toBe(3400);
     expect(scrollTo).toHaveBeenCalledWith(0, 3400);
+  });
+
+  it("restarts active translations when the ordinary source language changes", async () => {
+    document.body.innerHTML = "<main><p>Original paragraph.</p></main>";
+    translateNormally();
+    await startPageTranslation(settings);
+    updatePageTranslationSettings({ ...settings, sourceLang: "en" });
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sendRuntimeRequest).mock.calls[1][0]).toMatchObject({
+      sourceLang: "en", targetLang: settings.targetLang, texts: ["Original paragraph."]
+    });
+    expect(getPageTranslationState()).toMatchObject({ active: true, translated: 1, failed: 0 });
+  });
+
+  it("uses the new language for offscreen and dynamically added paragraphs", async () => {
+    document.body.innerHTML = '<main><p data-top="100">First paragraph.</p><p data-top="5100">Later paragraph.</p></main>';
+    translateNormally();
+    await startPageTranslation({ ...settings, targetLang: "ja" });
+    updatePageTranslationSettings(settings);
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+    expect(sendRuntimeRequest).toHaveBeenCalledTimes(2);
+
+    scrollOffset = 5000;
+    window.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => expect(getPageTranslationState().translated).toBe(2));
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", '<p data-top="5200">New paragraph.</p>');
+    await vi.waitFor(() => expect(getPageTranslationState().translated).toBe(3));
+    const requests = vi.mocked(sendRuntimeRequest).mock.calls.map(([request]) => request);
+    expect(requests).toHaveLength(4);
+    expect(requests.slice(1)).toEqual([
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["First paragraph."] }),
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["Later paragraph."] }),
+      expect.objectContaining({ targetLang: "zh-CN", texts: ["New paragraph."] })
+    ]);
+  });
+
+  it("preserves window and nested scroll positions while clearing the old language", async () => {
+    document.body.innerHTML = '<main><section><p>Stable viewport paragraph.</p></section></main>';
+    translateNormally();
+    await startPageTranslation(settings);
+    const container = document.querySelector("section")!;
+    container.scrollTop = 700;
+    container.scrollLeft = 15;
+    let currentScrollY = 3400;
+    vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
+    vi.spyOn(window, "scrollY", "get").mockImplementation(() => currentScrollY);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation((_left, top) => { currentScrollY = Number(top); });
+    const nativeRemove = Element.prototype.remove;
+    vi.spyOn(Element.prototype, "remove").mockImplementation(function (this: Element) {
+      if (this.classList.contains("wupage-translation")) {
+        currentScrollY -= 100;
+        container.scrollTop -= 40;
+        container.scrollLeft = 0;
+      }
+      nativeRemove.call(this);
+    });
+
+    updatePageTranslationSettings({ ...settings, targetLang: "ja" });
+    expect(currentScrollY).toBe(3400);
+    expect(container.scrollTop).toBe(700);
+    expect(container.scrollLeft).toBe(15);
+    expect(scrollTo).toHaveBeenCalledWith(12, 3400);
+    await vi.waitFor(() => expect(getPageTranslationState().pending).toBe(0));
+    expect(getPageTranslationState().translated).toBe(1);
   });
 
   it("does not render a late response after translations are cleared", async () => {

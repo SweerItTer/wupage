@@ -22,7 +22,8 @@ const server = createServer(async (request, response) => {
   if (request.method === 'POST') {
     let body = '';
     for await (const chunk of request) body += chunk;
-    requests.push(JSON.parse(body));
+    const payload = JSON.parse(body);
+    requests.push(payload);
     calls++;
     if (hold) {
       const released = new Promise(resolve => heldResponses.push(resolve));
@@ -31,12 +32,15 @@ const server = createServer(async (request, response) => {
     }
     if (fail) { response.writeHead(400).end('Translation service unavailable'); return; }
     response.setHeader('content-type', 'application/json');
-    response.end(JSON.stringify({ translations: JSON.parse(body).texts.map(text => unchanged ? text : '好的翻译让我们读懂更广阔的世界，也让阅读自然地融入日常生活。') }));
+    response.end(JSON.stringify({ translations: payload.texts.map(text => unchanged ? text : `${payload.targetLang === 'ja' ? 'ja: ' : ''}好的翻译让我们读懂更广阔的世界，也让阅读自然地融入日常生活。`) }));
     return;
   }
   response.setHeader('content-type', 'text/html; charset=utf-8');
   response.end(`<!doctype html><html><head><meta charset="utf-8"><title>A quiet place to read</title><style>
     body{margin:0;background:#f7f6f2;color:#263d38;font:17px/1.9 Georgia,serif}header{padding:28px 6vw;border-bottom:1px solid #dedfd8;font:600 13px system-ui;letter-spacing:2px}main{max-width:760px;margin:76px auto;padding:0 32px}small{color:#7a8c80;font:12px system-ui;letter-spacing:2px}h1{font-size:52px;line-height:1.15;font-weight:400;margin:24px 0}p{max-width:640px}aside{margin:40px 0;padding:24px;border-left:3px solid #aec0aa;background:#eff0e9} @media(max-width:600px){main{margin-top:35px}h1{font-size:36px}}
+    /* Host loading styles, as used by Stack Overflow, must not decorate the floating ball. */
+    .is-loading::before,.is-loading::after{content:"";position:absolute;width:1.23em;height:1.23em;left:.6em;top:calc(50% - .6em);border:2px solid currentColor}
+    .is-loading::before{opacity:.3}.is-loading::after{border-color:transparent;border-left-color:currentColor}
   </style></head><body><header>FIELD NOTES</header><main><small>READING & IDEAS · OCTOBER 2026</small><h1>A quiet place to read</h1><p>Good translation opens a wider world. It allows us to follow ideas across languages while keeping our attention on the page.</p><p>The most useful tools become a natural part of reading. They stay nearby when we need them and give the page room to breathe.</p><aside>Simple interactions make more space for the things that matter.</aside></main></body></html>`);
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -60,7 +64,7 @@ try {
     settings.providers.find(p => p.id === 'http-template').label = '本地测试服务';
     Object.assign(settings.providers.find(p => p.id === 'http-template'), {
       url: `${origin}/translate`, method: 'POST', headers: {'Content-Type':'application/json'},
-      bodyTemplate: '{"texts":{{json texts}}}', responsePath: 'translations'
+      bodyTemplate: '{"texts":{{json texts}},"targetLang":{{json targetLang}}}', responsePath: 'translations'
     });
     assertSave(await chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings }));
     function assertSave(result) { if (!result.ok) throw new Error(result.error); }
@@ -120,6 +124,8 @@ try {
   await ball.click();
   assert.equal(await ball.textContent(), '原', 'label changes immediately');
   await withTimeout(slowRequest,'the floating ball translation did not reach the local provider');
+  assert.deepEqual(await ball.evaluate(el => ['::before','::after'].map(pseudo => getComputedStyle(el,pseudo).content)),
+    ['none','none'], 'host loading styles must not add icons over the floating label');
   assert.equal(await ball.getAttribute('aria-disabled'), 'false');
   assert.equal(await ball.evaluate(el => getComputedStyle(el).cursor), 'pointer');
   assert.equal(await ball.evaluate(el => getComputedStyle(el).opacity), '1');
@@ -326,6 +332,12 @@ try {
     assert.equal(settings.sourceLang,'en');
     assert.equal(settings.targetLang,'ja');
   });
+  // Saving the language does not mean its translation has finished.
+  await page.waitForFunction(()=>{
+    const translations=[...document.querySelectorAll('.wupage-translation')];
+    return document.querySelector('#wupage-floating-ball').getAttribute('aria-busy')==='false'
+      && translations.length>0 && translations.every(node=>node.textContent.startsWith('ja: '));
+  });
   for(const mode of ['bilingual','bilingual-accent','replace']){
     const before=calls;
     await page.locator(`[data-mode="${mode}"]`).click();
@@ -365,6 +377,7 @@ try {
   assert.equal(await hitbox.isVisible(),false,'hidden preference survives reload');
   assert.deepEqual(errors, []);
   const checks=['500ms real hover delay','cancel brief hover','immediate original label','enabled while translating',
+    'host loading styles do not decorate the floating ball',
     'stop while translating','discard late response','restart after stopping','hover gap','pointer leave','direct click',
     'display modes','restore original','drag suppression','drag position persistence','keyboard','failure and retry',
     'popup state synchronization','popup translation toggle','popup floating visibility','popup paragraph mode',

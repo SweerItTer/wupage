@@ -25,6 +25,7 @@ import { translateLocally } from "./local";
 import { supportsServiceMode, translationApiOptions } from "../shared/translation-service";
 import { signVolcengineTranslation } from "./volcengine-signing";
 import { applyRequestTemplate, defaultLlmRequest, requestTemplateContext, validateRequestTemplate } from "../shared/request-template";
+import { DoubaoProvider } from "./doubao";
 
 const GOOGLE_WEB_REQUEST_CONCURRENCY = 4;
 const WEB_TRANSLATION_TIMEOUT_MS = 20_000;
@@ -111,6 +112,7 @@ export function createProvider(config: ProviderConfig): TranslatorProvider {
     });
     if (config.type !== "mymemory") return new CloudTranslationProvider(config);
   }
+  if (config.type === "doubao-web") return new DoubaoProvider(config);
   if (config.type === "firefox-local") return {
     id: config.id, label: config.label,
     validateConfig: () => ({ ok: true }),

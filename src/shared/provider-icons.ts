@@ -20,6 +20,7 @@ export function providerIconMarkup(provider: Pick<ProviderConfig, "type"> | unde
     case "tencent-transmart": icon = "tencent"; break;
     case "yandex-web-translate": icon = "yandex"; break;
     case "volcengine-web-translate": icon = "volcengine"; break;
+    case "doubao-web": icon = "doubao-color"; break;
     case "mymemory": icon = "mymemory"; break;
     case "deepseek": icon = "deepseek-color"; break;
     case "zhipu-glm": icon = "zhipu-color"; break;

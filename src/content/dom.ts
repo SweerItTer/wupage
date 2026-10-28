@@ -55,6 +55,13 @@ interface TrackedImageText {
   waitingForImage?: boolean;
 }
 
+interface StableReplacement {
+  source: HTMLElement;
+  container: HTMLElement;
+  sourceHadClass: boolean;
+  containerHadClass: boolean;
+}
+
 type RenderMode = "block" | "inline" | "code-comment";
 
 interface ProtectedToken {
@@ -70,6 +77,8 @@ const TRANSLATED_ATTR = "data-wupage-translated";
 const TARGET_ATTR = "data-wupage-target-id";
 const TRANSLATION_TARGET_ATTR = "data-wupage-translation-target";
 const REPLACED_SOURCE_CLASS = "wupage-replaced-source";
+const STABLE_REPLACEMENT_CLASS = "wupage-stable-replacement";
+const STABLE_SOURCE_CLASS = "wupage-stable-source";
 const SKIP_TAGS = new Set([
   "SCRIPT",
   "STYLE",
@@ -210,8 +219,10 @@ let trackedAttributes: TrackedAttribute[] = [];
 let trackedImageTexts: TrackedImageText[] = [];
 let protectedTokensById = new Map<string, ProtectedToken[]>();
 let sourceTextById = new Map<string, string>();
-const renderedById = new Map<string, Element>();
+const renderedById = new Map<string, HTMLElement>();
 const translatedTextById = new Map<string, string>();
+const stableReplacementsById = new Map<string, StableReplacement>();
+const stableReplacementSources = new WeakSet<Element>();
 let targetIdCounter = 0;
 let segmentIdCounter = 0;
 
@@ -272,17 +283,26 @@ export function collectAdditionalTextSegments(
 // its tracking so the next scan can translate the current source again.
 export function invalidateStaleSegments(changedRoots: Element[] = []): string[] {
   const stale = new Set<string>();
+  const recovered = recoverRewrittenReplacementSegments();
+  // The host may move an intact source or add another control beside it. Its
+  // text nodes can remain unchanged even though our isolated layout is unsafe.
+  for (const id of stableReplacementsById.keys()) {
+    if (!recovered.has(id)) stale.add(id);
+  }
   const changed = (tracked: TrackedNode): boolean => !tracked.node.isConnected
     || tracked.node.parentElement !== tracked.sourceParent
     || tracked.node.data !== (tracked.replaced ? "" : tracked.sourceValue);
   for (const tracked of trackedNodes) {
+    if (recovered.has(tracked.id)) continue;
     if (changed(tracked) || changedRoots.includes(tracked.node.parentElement!)) stale.add(tracked.id);
   }
   for (const [id, output] of renderedById) {
     if (!output.isConnected) stale.add(id);
   }
   for (const group of trackedGroups) {
-    if (stale.has(group.id) || group.nodes.some((node) => stale.has(node.id))
+    if (recovered.has(group.id)) continue;
+    if (!group.block.isConnected || group.nodes.some((node) => !group.block.contains(node.node))
+      || stale.has(group.id) || group.nodes.some((node) => stale.has(node.id))
       || changedRoots.some((root) => group.block === root || group.block.contains(root))) {
       stale.add(group.id);
       group.nodes.forEach((node) => stale.add(node.id));
@@ -318,6 +338,7 @@ export function invalidateStaleSegments(changedRoots: Element[] = []): string[] 
     if (stale.has(group.id)) restoreGroupedSource(group);
   }
   for (const id of stale) {
+    restoreStableReplacement(id);
     renderedById.get(id)?.remove();
     renderedById.delete(id);
     removePendingForId(id);
@@ -333,6 +354,143 @@ export function invalidateStaleSegments(changedRoots: Element[] = []): string[] 
   trackedAttributes = trackedAttributes.filter((attribute) => !stale.has(attribute.id));
   trackedImageTexts = trackedImageTexts.filter((tracked) => !stale.has(tracked.id));
   return [...stale];
+}
+
+/** Only isolate one complete, noninteractive text element in a simple wrapper. */
+function stableReplacementSource(nodes: TrackedNode[]): HTMLElement | undefined {
+  const parents = new Set(nodes.filter((node) => node.sourceValue.trim()).map((node) => node.sourceParent));
+  if (parents.size !== 1) return undefined;
+  const source = parents.values().next().value;
+  if (!(source instanceof HTMLElement) || !source.isConnected || !source.matches("span,p,div")) return undefined;
+  if (source.matches("[role],[tabindex],[contenteditable],[slot]")
+    || [...source.attributes].some((attribute) => attribute.name.startsWith("on"))) return undefined;
+  if ([...source.childNodes].some((node) => node instanceof Element && !node.matches(`.${TRANSLATION_CLASS}`))) {
+    return undefined;
+  }
+  const container = source.parentElement;
+  if (!(container instanceof HTMLElement) || !container.matches("p,div")
+    || container.matches("[contenteditable],[slot]")) return undefined;
+  if (container.style.display && container.style.display !== "block") return undefined;
+  const alreadyIsolated = [...stableReplacementsById.values()].some((entry) => entry.source === source && entry.container === container);
+  if (!alreadyIsolated && window.getComputedStyle(container).display !== "block") return undefined;
+  if ([...container.childNodes].some((node) => node !== source
+    && node.nodeType !== Node.COMMENT_NODE
+    && !(node instanceof Text && !node.data.trim())
+    && !(node instanceof Element && node.matches(`.${TRANSLATION_CLASS}`)))) return undefined;
+  // Moving output outside a hidden or positioned source would bypass its
+  // layout boundary. Only our own reversible visibility change is expected.
+  const style = window.getComputedStyle(source);
+  if (style.display === "none" || Number.parseFloat(style.opacity) === 0
+    || (style.visibility === "hidden" && !source.classList.contains(STABLE_SOURCE_CLASS))
+    || style.position === "absolute" || style.position === "fixed"
+    || (style.clip && style.clip !== "auto")
+    || (style.clipPath && style.clipPath !== "none")) return undefined;
+  return source;
+}
+
+function directSourceTextNodes(source: Element): Text[] {
+  return [...source.childNodes].filter((node): node is Text => node instanceof Text);
+}
+
+// A resize-driven host can restore or rebuild its text after replacement clears
+// it. Preserve the logical result and stop editing the host's measured contents.
+function recoverRewrittenReplacementSegments(): Set<string> {
+  const recovered = new Set<string>();
+  const groups = new Map(trackedGroups.map((group) => [group.id, group]));
+  const groupedNodes = new Set(trackedGroups.flatMap((group) => group.nodes));
+  const candidates = new Map<string, TrackedNode[]>();
+  for (const group of trackedGroups) candidates.set(group.id, group.nodes);
+  for (const node of trackedNodes) {
+    if (!groupedNodes.has(node)) candidates.set(node.id, [node]);
+  }
+  for (const [id, oldNodes] of candidates) {
+    const output = renderedById.get(id);
+    const translation = translatedTextById.get(id);
+    if (!translation || output?.getAttribute("data-wupage-display-mode") !== "replace"
+      || (!stableReplacementsById.has(id) && !oldNodes.some((node) => node.replaced))) continue;
+    const group = groups.get(id);
+    const stable = stableReplacementsById.get(id);
+    if (stable && (!stable.container.isConnected || stable.source.parentElement !== stable.container
+      || (output.isConnected && output.parentElement !== stable.container))) continue;
+    if (protectedTokensById.has(id) || group?.authoredLines || group?.insertionBefore || group?.insertionAfter
+      || oldNodes.some((node) => node.mode === "code-comment")) continue;
+    const source = stableReplacementSource(oldNodes);
+    if (!source) continue;
+    // The page scheduler retains the original group element as its viewport
+    // anchor. A move out of that block is new content, not a same-place rewrite.
+    if (group && (!group.block.isConnected || !group.block.contains(source))) continue;
+    const nodes = directSourceTextNodes(source);
+    const text = normalizeText(nodes.map((node) => node.data).join(""));
+    if (!text || text !== normalizeText(sourceTextById.get(id) ?? "")) continue;
+    stableReplacementSources.add(source);
+    let rebound = oldNodes;
+    if (nodes.length !== oldNodes.length || nodes.some((node, index) => oldNodes[index].node !== node
+      || oldNodes[index].sourceValue !== node.data || oldNodes[index].replaced)) {
+      rebound = nodes.map((node): TrackedNode => ({
+        id, node, mode: oldNodes[0].mode, sourceValue: node.data, sourceParent: source
+      }));
+      const old = new Set(oldNodes);
+      trackedNodes = trackedNodes.filter((node) => !old.has(node));
+      trackedNodes.push(...rebound);
+      if (group) group.nodes = rebound;
+      else if (rebound.length > 1) {
+        trackedGroups.push({ id, nodes: rebound, block: source, mode: rebound[0].mode });
+      }
+    }
+    recovered.add(id);
+    if (output?.isConnected) {
+      renderStableReplacement(id, rebound, output);
+    } else {
+      renderTranslations([{ id, text: translation }], "replace");
+    }
+  }
+  return recovered;
+}
+
+function renderStableReplacement(id: string, nodes: TrackedNode[], output: HTMLElement): boolean {
+  const source = stableReplacementSource(nodes);
+  if (!source || !stableReplacementSources.has(source)) return false;
+  const container = source.parentElement!;
+  const existing = stableReplacementsById.get(id);
+  if (existing && (existing.source !== source || existing.container !== container)) restoreStableReplacement(id);
+  if (!stableReplacementsById.has(id)) {
+    stableReplacementsById.set(id, {
+      source, container, sourceHadClass: source.hasAttribute("class"), containerHadClass: container.hasAttribute("class")
+    });
+  }
+  if (!source.classList.contains(STABLE_SOURCE_CLASS)) source.classList.add(STABLE_SOURCE_CLASS);
+  if (!container.classList.contains(STABLE_REPLACEMENT_CLASS)) container.classList.add(STABLE_REPLACEMENT_CLASS);
+  if (output.getAttribute("data-wupage-container") !== "stable-replacement") {
+    output.setAttribute("data-wupage-container", "stable-replacement");
+  }
+  const targetId = ensureTranslationTarget(source);
+  if (output.getAttribute(TRANSLATION_TARGET_ATTR) !== targetId) output.setAttribute(TRANSLATION_TARGET_ATTR, targetId);
+  if (source.getAttribute(TRANSLATED_ATTR) !== "true") source.setAttribute(TRANSLATED_ATTR, "true");
+  // A sibling cannot inherit the source's typography. Refresh it on recovery
+  // (including resize), without generating mutations when nothing changed.
+  const style = window.getComputedStyle(source);
+  for (const name of ["font-family", "font-size", "font-weight", "font-style", "font-stretch", "font-variant",
+    "line-height", "letter-spacing", "word-spacing", "text-transform", "color"]) {
+    const value = style.getPropertyValue(name);
+    if (value && (output.style.getPropertyValue(name) !== value || output.style.getPropertyPriority(name) !== "important")) {
+      output.style.setProperty(name, value, "important");
+    }
+  }
+  if (output.parentElement !== container) source.after(output);
+  return true;
+}
+
+function restoreStableReplacement(id: string): void {
+  const replacement = stableReplacementsById.get(id);
+  if (!replacement) return;
+  for (const [element, name, hadClass] of [
+    [replacement.source, STABLE_SOURCE_CLASS, replacement.sourceHadClass],
+    [replacement.container, STABLE_REPLACEMENT_CLASS, replacement.containerHadClass]
+  ] as const) {
+    element.classList.remove(name);
+    if (!hadClass && element.getAttribute("class") === "") element.removeAttribute("class");
+  }
+  stableReplacementsById.delete(id);
 }
 
 export function findTranslatableParagraph(start: Element | null): Element | null {
@@ -509,6 +667,10 @@ export function renderTranslations(
     if (displayMode !== "replace") element.setAttribute("aria-hidden", "true");
     element.setAttribute(TRANSLATION_TARGET_ATTR, targetId);
     block.setAttribute(TRANSLATED_ATTR, "true");
+    if (displayMode === "replace" && renderStableReplacement(group.id, group.nodes, element)) {
+      renderedById.set(group.id, element);
+      continue;
+    }
     insertGroupedTranslation(group, element, displayMode);
     renderedById.set(group.id, element);
     if (displayMode === "replace") {
@@ -537,6 +699,10 @@ export function renderTranslations(
     element.setAttribute("lang", "translated");
     if (displayMode !== "replace") element.setAttribute("aria-hidden", "true");
     parent.setAttribute(TRANSLATED_ATTR, "true");
+    if (displayMode === "replace" && renderStableReplacement(tracked.id, [tracked], element)) {
+      renderedById.set(tracked.id, element);
+      continue;
+    }
     tracked.node.after(element);
     renderedById.set(tracked.id, element);
     if (displayMode === "replace") replaceTrackedSource([tracked]);
@@ -691,6 +857,7 @@ export function restoreTranslations(displayMode: TranslationDisplayMode): void {
 }
 
 function clearNodeTracking(): void {
+  for (const id of stableReplacementsById.keys()) restoreStableReplacement(id);
   trackedNodes = [];
   trackedGroups = [];
   trackedAttributes = [];
@@ -884,6 +1051,9 @@ function restoreProtectedSource(token: ProtectedToken): void {
 }
 
 function restoreReplacedSourcesIn(root: Element): void {
+  for (const [id, replacement] of stableReplacementsById) {
+    if (replacement.source === root || root.contains(replacement.source)) restoreStableReplacement(id);
+  }
   for (const group of trackedGroups) {
     if (group.sourceHidden && (group.block === root || root.contains(group.block))) {
       restoreGroupedSource(group);
@@ -1326,7 +1496,7 @@ function shouldSkipElement(
   includeNavigation = false,
   visibility?: RenderVisibilitySnapshot
 ): boolean {
-  if (element.closest(`.${TRANSLATION_CLASS}`)) return true;
+  if (element.closest(`.${TRANSLATION_CLASS},kbd,samp`)) return true;
   if (element.closest(REDDIT_METADATA_SELECTOR)) return true;
   if (isInsideCodeBlock(element)) return false;
   if (isCompactControlText(element)) {
@@ -1505,6 +1675,7 @@ function renderProtectedText(container: Element, id: string, text: string): void
 
 function isProtectedInlineElement(element: Element): boolean {
   if (element.closest("pre, .highlight, .example-wrap, .blob-code, .react-code-text")) return false;
+  if (isCompactControlText(element)) return true;
   const div = element.closest("div");
   return Boolean(element.closest(`li,${SEMANTIC_TEXT_BLOCK_SELECTOR}`) || (div && isDivProseBlock(div)));
 }
@@ -1717,7 +1888,10 @@ function isCompactControlText(element: Element): boolean {
 }
 
 function getCompactControlTarget(element: Element): Element | null {
-  const control = element.closest("button,a,[role='button'],[role='tab'],[role='menuitem']");
+  const control = element.closest(
+    "button,a,[role='button'],[role='tab'],[role='menuitem'],"
+    + "[role='menuitemradio'],[role='menuitemcheckbox'],[role='option']"
+  );
   if (!control || control.closest(HEADING_SELECTOR)) return null;
   if (control.matches("a:not([role='button'])") && !control.querySelector("img,svg,canvas")) return null;
   if (control.querySelector("input,select,textarea,[contenteditable='true']")) return null;
@@ -1731,6 +1905,9 @@ function getNestedTextHost(element: Element, container: Element): Element {
   let host = element;
   while (host.parentElement && host.parentElement !== container) {
     const parent = host.parentElement;
+    // Keep grouped labels in their layout cell instead of adding a new item
+    // to the parent's icon/text grid or flex row.
+    if (/^(?:inline-)?(?:flex|grid)$/u.test(window.getComputedStyle(parent).display)) break;
     if (parent.querySelector("img,svg,canvas,button,input,select,textarea,[role='button']")) break;
     if (normalizeText(parent.textContent ?? "") !== normalizeText(host.textContent ?? "")) break;
     host = parent;

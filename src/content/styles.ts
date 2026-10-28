@@ -87,6 +87,30 @@ export function injectContentStyles(): void {
       display: none !important;
     }
 
+    /* Keep host-managed text measurable while its replacement determines the
+       wrapper's height. The source must not stretch to the translation row. */
+    .wupage-stable-replacement {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      align-items: start !important;
+    }
+
+    .wupage-stable-replacement > .wupage-stable-source {
+      grid-area: 1 / 1 !important;
+      align-self: start !important;
+      min-width: 0 !important;
+      visibility: hidden !important;
+    }
+
+    .wupage-stable-replacement > .wupage-translation[data-wupage-container="stable-replacement"] {
+      grid-area: 1 / 1;
+      align-self: start;
+      min-width: 0;
+      display: block;
+      margin: 0;
+      visibility: visible;
+    }
+
     .wupage-translation[data-wupage-container="authored-lines"] {
       position: static;
       display: block;
@@ -278,7 +302,7 @@ export function injectContentStyles(): void {
       outline-offset: 3px;
     }
 
-    #wupage-floating-ball.is-loading {
+    #wupage-floating-ball.wupage-is-loading {
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-floating-background, #116466) 25%, transparent), 0 8px 24px rgba(15, 35, 38, 0.22);
     }
 

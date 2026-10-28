@@ -1,0 +1,75 @@
+name: Check pull request
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Types, tests and browser builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Run unit and integration tests
+        run: npm test
+
+      - name: Build Chrome and Edge extension
+        run: npm run build
+
+      - name: Build Firefox extension
+        run: npm run build:firefox
+
+      - name: Check content scripts and package test builds
+        shell: bash
+        run: |
+          node --input-type=commonjs --check < dist/content.js
+          node --input-type=commonjs --check < dist-firefox/content.js
+          python3 - <<'PY'
+          import hashlib
+          import pathlib
+          import zipfile
+
+          output = pathlib.Path('artifacts')
+          output.mkdir(exist_ok=True)
+          for source, browser in [('dist', 'chrome-edge'), ('dist-firefox', 'firefox')]:
+              source = pathlib.Path(source)
+              assert (source / 'manifest.json').is_file()
+              archive = output / f'wupage-pr-{browser}.zip'
+              with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
+                  for path in sorted(source.rglob('*')):
+                      if path.is_file():
+                          package.write(path, path.relative_to(source))
+              digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+              archive.with_suffix('.zip.sha256').write_text(f'{digest}  {archive.name}\n')
+          PY
+
+      - name: Upload test packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: wupage-pr-${{ github.event.pull_request.number || github.run_number }}-browsers
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14

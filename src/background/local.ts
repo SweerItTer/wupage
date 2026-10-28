@@ -1,6 +1,7 @@
 import { getLocalRoute, normalizeLocalLanguage } from "../local/models";
 import type { RuntimeResponse, TranslateBatchRequest } from "../shared/types";
 import { ensureOffscreenDocument } from "./offscreen";
+import { detectSourceLanguage } from "./source-language";
 
 export async function requestLocal<T>(action: string, data?: unknown): Promise<T> {
   await ensureOffscreenDocument();
@@ -14,12 +15,11 @@ export async function translateLocally(request: TranslateBatchRequest, signal?: 
   if (!request.texts.length) return [];
   let source = request.sourceLang ?? "auto";
   if (source === "auto") {
-    const detected = await chrome.i18n.detectLanguage(request.texts.join("\n").slice(0, 12000));
-    const best = detected.languages[0];
-    if (!best || best.language === "und" || best.percentage < 50) {
+    const detected = await detectSourceLanguage(request.texts, signal);
+    if (!detected) {
       throw new Error("本地翻译无法可靠识别源语言，请在翻译设置中手动选择源语言。");
     }
-    source = best.language;
+    source = detected;
   }
   const route = getLocalRoute(source, request.targetLang);
   if (!route.length) return [...request.texts];

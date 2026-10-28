@@ -17,7 +17,10 @@ const listTranslations = [
   ["Is there a special place for Hilbert's foundations of geometry?", "希尔伯特的《几何基础》在几何学基础中是否享有特殊地位？"],
   ["performance", "性能"], ["stream", "流"], ["memory-efficient", "节省内存"]
 ];
-const translations = [[title, "游戏扩展模块库"], [summary, "用于创建扩展并与其他玩家分享的轻量级工具。"], ["by", "作者"], ...listTranslations];
+const translations = [[title, "游戏扩展模块库"], [summary, "用于创建扩展并与其他玩家分享的轻量级工具。"], ["by", "作者"],
+  ["Type ⟪WUPAGE0⟫ to search", "输入 ⟪WUPAGE0⟫ 进行搜索"], ["Type / to search", "输入 / 进行搜索"],
+  ["Auto", "自动"], ["Optimized for Balance", "针对平衡进行了优化"],
+  ["Optimized for: Balance", "针对：平衡进行了优化"], ...listTranslations];
 const server = createServer((request, response) => {
   const chinese = request.url === "/zh";
   response.setHeader("content-type", "text/html; charset=utf-8");
@@ -40,7 +43,31 @@ const server = createServer((request, response) => {
     #hot-network-questions .favicon,#hot-network-questions a{display:inline-block;vertical-align:top}
     #hot-network-questions .favicon{width:16px;height:16px;margin:2px 6px 0 0;background:#0074cc}
     #hot-network-questions a{font-weight:normal;font-size:13px;white-space:normal;width:90%}
-    </style></head><body><main>
+    .dynamic-wrapper{font:16px/24px sans-serif;margin:12px 0}
+    .dynamic-source{display:block;font:italic small-caps 600 20px/28px serif;font-stretch:90%;
+      letter-spacing:.5px;word-spacing:1px;text-transform:uppercase;color:#f6f8fa}
+    @media(max-width:500px){.dynamic-source{font-size:18px;font-weight:700;line-height:26px;letter-spacing:.25px}}
+    .search-control{display:flex;align-items:center;gap:8px;width:320px;max-width:100%;height:36px;padding:0 12px;font:14px/20px sans-serif}
+    .search-label{flex:1;text-align:left}.search-label kbd{border:1px solid #9198a1;border-radius:3px;padding:0 3px;font:11px/16px monospace}
+    .tier-control{display:flex;align-items:center;justify-content:space-between;gap:8px;height:32px;min-width:max-content;padding:0 12px;border:1px solid transparent;font:14px/21px sans-serif}
+    .tier-content{display:grid;grid-template-columns:min-content minmax(0,auto) min-content;grid-template-areas:"leadingVisual text trailingVisual";align-items:center}
+    .tier-label{grid-area:text;white-space:nowrap}.tier-action{display:inline-flex;margin-right:-4px}
+    .model-list{padding:0;list-style:none}.action-content{display:grid;grid-template:"spacer leadingAction leadingVisual content" min-content/min-content min-content min-content minmax(0,auto)}
+    .leading-visual{grid-area:leadingVisual;width:24px}.action-subcontent{display:grid;grid-area:content;grid-template:"label trailingVisual trailingAction" min-content/minmax(0,auto) min-content min-content;gap:8px}
+    .description-wrap{display:flex;flex-direction:column;gap:4px;grid-area:label}.model-label{font:600 14px/20px sans-serif}.model-description{font:400 12px/16px sans-serif}.trailing-visual{grid-area:trailingVisual;white-space:nowrap}
+    </style></head><body><main role="main">
+    <header><button class="search-control" type="button"><svg aria-hidden="true" width="16" height="16"></svg>
+      <span class="search-label">Type <kbd>/</kbd> to search</span></button></header>
+    <button class="tier-control" type="button" aria-expanded="false" aria-label="Optimized for: Balance">
+      <span class="tier-content" data-component="buttonContent"><span class="tier-label" data-component="text"></span></span>
+      <span class="tier-action" data-component="trailingAction"><svg aria-hidden="true" width="16" height="16"></svg></span>
+    </button>
+    <ul class="model-list" role="menu"><li role="menuitemradio" aria-checked="true" tabindex="0" aria-labelledby="model-label" aria-describedby="model-description" data-component="ActionList.Item">
+      <div class="action-content"><span class="leading-visual"><svg aria-hidden="true" width="16" height="16"></svg></span>
+        <span class="action-subcontent" data-component="ActionList.Item--DividerContainer"><div class="description-wrap" data-description-variant="block">
+          <span id="model-label" class="model-label" data-component="ActionList.Item.Label"><span>Auto</span></span>
+          <span id="model-description" class="model-description" data-component="ActionList.Description"><span>Optimized for Balance</span></span>
+        </div><span class="trailing-visual" aria-hidden="true">Balance ›</span></span></div></li></ul>
     <p>${chinese ? "游戏版本 · 加载器 · 排序方式 · 客户端或服务端" : "Browse community extensions and tools for your game."}</p>
     ${["flex", "grid"].map(layout => `<div class="card" id="${layout}"><div class="fields ${layout}">
       <span class="title">${title}</span><span class="author">by <a href="/user/developer">developer</a></span>
@@ -52,7 +79,11 @@ const server = createServer((request, response) => {
         <li><div class="favicon" title="Mathematics"></div><a class="layout-link" href="/question/2">${listTranslations[1][0]}</a></li>
       </ul></div>
     </div>
-    </main></body></html>`);
+    ${[title, summary].map(text => `<p class="dynamic-wrapper"><span class="dynamic-source">${text}</span></p>`).join("")}
+    </main><script>
+      // React renders the prefix and selected value as separate Text nodes.
+      document.querySelector(".tier-label").append(document.createTextNode("Optimized for: "), document.createTextNode("Balance"));
+    </script></body></html>`);
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let context;
@@ -91,6 +122,12 @@ try {
     };
   }, translations);
   const page = await context.newPage();
+  const setMode = mode => control.evaluate(async mode => {
+    const { data: settings } = await chrome.runtime.sendMessage({ type: "GET_SETTINGS" });
+    await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: { ...settings, translationDisplayMode: mode } });
+  }, mode);
+  const waitForMode = mode => page.waitForFunction(mode => [...document.querySelectorAll(".wupage-translation")]
+    .every(node => node.dataset.wupageDisplayMode === mode), mode);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   const reports = [];
@@ -102,6 +139,7 @@ try {
     const listLinks = await page.locator(".layout-link").evaluateAll(nodes => nodes.map(node => ({
       href: node.getAttribute("href"), color: getComputedStyle(node).color
     })));
+    const searchLabelHeight = await page.locator(".search-label").evaluate(node => node.getBoundingClientRect().height);
     const typography = await page.locator(".title").evaluateAll(nodes => nodes.map(node => {
       const { fontSize, fontWeight, lineHeight, color } = getComputedStyle(node);
       return { fontSize, fontWeight, lineHeight, color };
@@ -110,6 +148,7 @@ try {
       const [tab] = await chrome.tabs.query({ url });
       return chrome.tabs.sendMessage(tab.id, request);
     }, { url, request });
+    await setMode("replace");
     const result = await message({ type: "TRANSLATE_PAGE" });
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(result.data.failed, 0);
@@ -118,15 +157,32 @@ try {
       assert.equal(description, translations[1][1], `${locale}: English descriptions must translate`);
     }
     const requestCount = await worker.evaluate(() => globalThis.cardRequests.length);
+    const status = page.locator("#wupage-floating-menu [data-role='translation-status']");
+    const progress = await status.textContent();
+    assert.ok(progress.includes(`已翻译 ${result.data.translated} 段`));
+    const initialOutputs = await page.locator(".dynamic-source .wupage-translation").elementHandles();
+    assert.equal(initialOutputs.length, 2);
+    // Host truncators may restore text in place or discard the output while rebuilding it.
+    await page.locator(".dynamic-source").evaluateAll((sources, texts) => {
+      sources[0].firstChild.data = texts[0];
+      sources[1].replaceChildren(document.createTextNode(texts[1]));
+    }, [title, summary]);
+    await page.waitForFunction(() => document.querySelectorAll(
+      '.dynamic-wrapper > .wupage-translation[data-wupage-container="stable-replacement"]'
+    ).length === 2);
+    assert.equal(await initialOutputs[0].evaluate(node => node.isConnected), true);
+    assert.equal(await initialOutputs[1].evaluate(node => node.isConnected), false);
     for (const width of [1000, 390]) {
       await page.setViewportSize({ width, height: 900 });
+      await page.locator(".dynamic-source").evaluateAll((sources, texts) => {
+        sources.forEach((source, index) => source.replaceChildren(document.createTextNode(texts[index])));
+        window.dispatchEvent(new Event("resize"));
+        window.dispatchEvent(new Event("scroll"));
+      }, [title, summary]);
+      await page.waitForTimeout(250);
       for (const mode of ["replace", "bilingual", "bilingual-accent"]) {
-        await control.evaluate(async mode => {
-          const { data: settings } = await chrome.runtime.sendMessage({ type: "GET_SETTINGS" });
-          await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: { ...settings, translationDisplayMode: mode } });
-        }, mode);
-        await page.waitForFunction(mode => [...document.querySelectorAll(".wupage-translation")]
-          .every(node => node.dataset.wupageDisplayMode === mode), mode);
+        await setMode(mode);
+        await waitForMode(mode);
         assert.equal(await page.locator(".fields > .wupage-translation").count(), 0);
         assert.equal(await page.locator("#list-layout li > .wupage-translation").count(), 0);
         assert.equal(await page.locator(".layout-link .wupage-translation").count(), 5);
@@ -145,21 +201,68 @@ try {
         assert.deepEqual(await page.locator(".author a").evaluateAll(nodes => nodes.map(node => node.getAttribute("href"))),
           ["/user/developer", "/user/developer"]);
         assert.equal(await page.locator("main").evaluate(node => node.scrollWidth > node.clientWidth + 1), false);
+        const tier = await page.locator(".tier-control").evaluate(button => {
+          const output = button.querySelector(".wupage-translation");
+          const rect = button.getBoundingClientRect(), translated = output.getBoundingClientRect();
+          return { text: output.textContent, field: output.parentElement.dataset.component,
+            singleLine: translated.height <= Number.parseFloat(getComputedStyle(button).lineHeight),
+            fits: translated.left >= rect.left && translated.right <= rect.right && translated.top >= rect.top && translated.bottom <= rect.bottom,
+            fontSize: getComputedStyle(output).fontSize, expanded: button.getAttribute("aria-expanded") };
+        });
+        assert.deepEqual(tier, { text: "针对：平衡进行了优化", field: "text", singleLine: true, fits: true,
+          fontSize: mode === "replace" ? "14px" : "12.88px", expanded: "false" },
+        "Split button labels must remain in their original text column");
         if (mode === "replace") {
           assert.deepEqual(listLayout.map(row => row.color), listLinks.map(link => link.color));
+          const search = await page.locator(".search-control").evaluate((button, originalHeight) => {
+            const rect = button.getBoundingClientRect(), label = button.querySelector(".search-label").getBoundingClientRect();
+            return { text: button.querySelector(".wupage-translation")?.textContent,
+              translatedKey: button.querySelector(".wupage-translation kbd")?.textContent,
+              keys: [...button.querySelectorAll("kbd")].filter(key => key.getBoundingClientRect().width > 0).length,
+              fits: label.height <= originalHeight && label.left >= rect.left && label.right <= rect.right && label.top >= rect.top && label.bottom <= rect.bottom };
+          }, searchLabelHeight);
+          assert.deepEqual(search, { text: "输入 / 进行搜索", translatedKey: "/", keys: 1, fits: true }, "Search shortcut must stay inline without a duplicate key");
           const rendered = await page.locator(".title .wupage-translation").evaluateAll(nodes => nodes.map(node => {
             const { fontSize, fontWeight, lineHeight, color } = getComputedStyle(node);
             return { fontSize, fontWeight, lineHeight, color };
           }));
           assert.deepEqual(rendered, typography, "Replacement titles must retain their original typography");
           assert.deepEqual(await page.locator(".title").allTextContents(), [translations[0][1], translations[0][1]]);
+          const recovered = await page.locator(".dynamic-source").evaluateAll(sources => sources.map(source => {
+            const properties = ["font-family", "font-size", "font-weight", "font-style", "font-stretch", "font-variant",
+              "line-height", "letter-spacing", "word-spacing", "text-transform", "color"];
+            const read = element => Object.fromEntries(properties.map(name => [name, getComputedStyle(element).getPropertyValue(name)]));
+            return { source: read(source), output: read(source.parentElement.querySelector(":scope > .wupage-translation")) };
+          }));
+          for (const entry of recovered) assert.deepEqual(entry.output, entry.source,
+            `Recovered replacement must retain source typography (${locale}, ${width})`);
+          assert.deepEqual(await page.locator(".dynamic-wrapper > .wupage-translation").allTextContents(),
+            [translations[0][1], translations[1][1]]);
         }
+        for (const [selector, text, size] of [["#model-label", "自动", "14px"], ["#model-description", "针对平衡进行了优化", "12px"]]) {
+          assert.equal(await page.locator(`${selector} .wupage-translation`).textContent(), text);
+          if (mode === "replace") assert.equal(await page.locator(`${selector} .wupage-translation`).evaluate(node => getComputedStyle(node).fontSize), size);
+        }
+        assert.equal(await page.locator(".model-list li > .wupage-translation,.action-content > .wupage-translation,.action-subcontent > .wupage-translation").count(), 0);
+        assert.deepEqual(await page.locator(".model-list li").evaluate(node => ["role", "aria-checked", "tabindex", "aria-labelledby", "aria-describedby"].map(name => node.getAttribute(name))),
+          ["menuitemradio", "true", "0", "model-label", "model-description"]);
         assert.equal(await worker.evaluate(() => globalThis.cardRequests.length), requestCount);
-        reports.push({ locale, width, mode, independentFields: true, linksPreserved: true, listLayout });
+        assert.equal(await status.textContent(), progress, "Host rewrites must not increase translated segment counts");
+        reports.push({ locale, width, mode, independentFields: true, linksPreserved: true, dynamicRecovery: true, listLayout });
         await page.screenshot({ path: path.join(output, `${locale}-${width}-${mode}.png`) });
       }
+      // Resize an existing replacement on the next iteration, without rendering a new one.
+      await setMode("replace");
+      await waitForMode("replace");
     }
+    // A visible field can become screen-reader-only while its host restores the source text.
+    await page.locator(".dynamic-source").first().evaluate((source, text) => {
+      source.style.cssText = "position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden;white-space:nowrap";
+      source.replaceChildren(document.createTextNode(text));
+    }, title);
+    await page.waitForFunction(() => !document.querySelector(".dynamic-source").parentElement.querySelector(":scope > .wupage-translation"));
     await message({ type: "CLEAR_TRANSLATION" });
+    await page.locator(".dynamic-source").first().evaluate(source => source.removeAttribute("style"));
     assert.equal(await page.locator("main").innerHTML(), original);
   }
   const requests = await worker.evaluate(() => globalThis.cardRequests);
@@ -167,7 +270,7 @@ try {
   assert.ok(requests.includes(summary), "Retry the untranslated description independently");
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, "report.json"), JSON.stringify({ reports, errors }, null, 2));
-  console.log("PASS: localized card pages; 12 locale/viewport/mode combinations, title typography, icon/link rows, tag labels, mixed-language recovery and source restoration");
+  console.log("PASS: localized card pages; 12 locale/viewport/mode combinations, title and recovered typography, stable dynamic counts, author links, icon/link rows, tag labels, mixed-language recovery and source restoration");
 } finally {
   await context?.close();
   await new Promise(resolve => server.close(resolve));

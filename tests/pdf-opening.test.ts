@@ -73,6 +73,18 @@ describe("PDF source opening", () => {
     return sendMessage.mock.calls.some(([request]) => (request as RuntimeRequest).type === "TRANSLATE_BATCH");
   }
 
+  async function mockDocumentPages(count: number): Promise<void> {
+    const documentProxy = await getDocument.getMockImplementation()!().promise;
+    const sample = await documentProxy.getPage(1);
+    getDocument.mockReturnValue({ promise: Promise.resolve({
+      numPages: count,
+      getPage: async (number: number) => ({ ...sample, getTextContent: async () => ({
+        items: [{ str: `Page ${number} contents.`, transform: [1, 0, 0, 12, 10, 100], width: 180, fontName: "font" }],
+        styles: { font: { fontFamily: "Arial" } }
+      }) })
+    }), destroy: vi.fn() });
+  }
+
   it("reads and automatically translates a permitted local PDF", async () => {
     await launch(fileUrl);
     await vi.waitFor(() => expect(translated()).toBe(true));
@@ -229,6 +241,79 @@ describe("PDF source opening", () => {
     button.click();
     await vi.waitFor(() => expect(document.querySelector("#statusToast")?.textContent).toContain("1 段译文"));
     expect(sendMessage.mock.calls.filter(([request]) => request.type === "TRANSLATE_BATCH")).toHaveLength(2);
+  });
+
+  it.each([["login-required", false], ["service-rejected", false], ["rate-limited", false], ["rate-limited", true]] as const)("pauses all waiting pages after %s (download=%s) and resumes only on an explicit translation", async (errorCode, forDownload) => {
+    await mockDocumentPages(6);
+    let readingPage = 1;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const page = Number(this.closest<HTMLElement>("article[data-page]")?.dataset.page);
+      const top = page ? (page - readingPage) * 1000 : 0;
+      return { top, bottom: page ? top + 980 : 75, left: 0, right: 600, width: 600, height: page ? 980 : 75, x: 0, y: top, toJSON() {} };
+    });
+    Object.assign(chrome.runtime, { getURL: (path: string) => `chrome-extension://test-extension/${path}` });
+    const stored = { ...structuredClone(DEFAULT_SETTINGS), activeProviderId: "doubao-web" };
+    const gates: Array<(response: RuntimeResponse) => void> = [];
+    const original = sendMessage.getMockImplementation()!;
+    sendMessage.mockImplementation((request: RuntimeRequest) => {
+      if (request.type === "GET_SETTINGS") return Promise.resolve({ ok: true, data: structuredClone(stored) });
+      if (request.type === "TRANSLATE_BATCH" && gates.length < 2) {
+        return new Promise<RuntimeResponse>((resolve) => gates.push(resolve));
+      }
+      return original(request);
+    });
+    const requests = () => sendMessage.mock.calls.filter(([request]) => request.type === "TRANSLATE_BATCH")
+      .map(([request]) => request.texts[0]);
+    await launch(fileUrl, !forDownload);
+    if (forDownload) {
+      const download = document.querySelector<HTMLButtonElement>("#downloadDocument")!;
+      await vi.waitFor(() => expect(download.disabled).toBe(false));
+      download.click();
+    }
+    await vi.waitFor(() => expect(requests()).toEqual(["Page 1 contents.", "Page 2 contents."]));
+    const originals = [...document.querySelectorAll(".original-panel canvas")];
+    const button = document.querySelector<HTMLButtonElement>("#translateDocument")!;
+    readingPage = 6;
+    window.dispatchEvent(new Event("scroll")); // A previously scheduled range change must also stop.
+    gates[0]({ ok: false, error: "请处理连接后重试。", errorCode, ...(errorCode === "rate-limited" ? { retryAfterMs: 100 } : {}) });
+    await vi.waitFor(() => expect(document.querySelector("#statusToast")?.textContent).toContain("翻译已暂停"));
+    expect(button.disabled).toBe(true); // The other in-flight page is allowed to settle.
+    gates[1]({ ok: true, data: { translations: ["第二页译文"], cached: 0 } });
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    window.dispatchEvent(new Event("scroll"));
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+    expect(requests()).toHaveLength(2);
+    expect(document.querySelector("#statusToast")?.textContent).toContain(forDownload ? "下载失败：请处理连接后重试" : "可直接点击翻译按钮重试");
+    expect(document.querySelector<HTMLElement>("#statusToast")?.hidden).toBe(false);
+    expect(document.querySelector('article[data-page="1"] .translation-canvas-shell')?.classList.contains("has-error")).toBe(true);
+    expect(document.querySelector('article[data-page="3"] .translation-canvas-shell')?.classList.contains("is-pending")).toBe(true);
+    expect([...document.querySelectorAll(".original-panel canvas")]).toEqual(originals);
+
+    button.click();
+    await vi.waitFor(() => expect(requests()).toHaveLength(7));
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    expect(requests().filter((text) => text === "Page 2 contents.")).toHaveLength(1); // Retain the completed in-flight page.
+    expect(document.querySelector("#statusToast")?.textContent).toContain("翻译完成");
+    expect(sendMessage.mock.calls.some(([request]) => request.type === "CHECK_DOUBAO")).toBe(false);
+  });
+
+  it("continues other waiting pages after an ordinary provider error", async () => {
+    await mockDocumentPages(6);
+    const original = sendMessage.getMockImplementation()!;
+    let failed = false;
+    sendMessage.mockImplementation((request: RuntimeRequest) => {
+      if (request.type === "TRANSLATE_BATCH" && !failed) {
+        failed = true;
+        return Promise.resolve({ ok: false, error: "This page could not be translated." });
+      }
+      return original(request);
+    });
+    await launch(fileUrl);
+    await vi.waitFor(() => expect(document.querySelector("#statusToast")?.textContent).toContain("1 页失败"));
+    expect(sendMessage.mock.calls.filter(([request]) => request.type === "TRANSLATE_BATCH")).toHaveLength(6);
+    expect(document.querySelector<HTMLButtonElement>("#translateDocument")!.disabled).toBe(false);
+    expect(document.querySelector("#statusToast")?.textContent).not.toContain("翻译已暂停");
   });
 
   it("resets the old session and automatically translates a different document once", async () => {

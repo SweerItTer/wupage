@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sendRuntimeRequest } from "../src/content/runtime";
+import { ProviderError, runtimeErrorResponse } from "../src/shared/errors";
+import { sendRuntimeMessage, sendTabMessage } from "../src/shared/messaging";
+import type { RuntimeRequest } from "../src/shared/types";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); document.body.replaceChildren(); });
 
@@ -55,5 +59,30 @@ describe("local inference runtime host", () => {
     const retry = ensureOffscreenDocument();
     document.querySelector("iframe")!.dispatchEvent(new Event("load"));
     await retry;
+  });
+});
+
+describe("provider errors across runtime messaging", () => {
+  const callers = [
+    ["settings and popup", (request: RuntimeRequest) => sendRuntimeMessage(request)],
+    ["content scripts", (request: RuntimeRequest) => sendRuntimeRequest(request)],
+    ["tab messages", (request: RuntimeRequest) => sendTabMessage(17, request)]
+  ] as const;
+
+  describe.each(callers)("%s", (_label, send) => {
+    it.each([
+      new ProviderError("豆包暂时限流", "rate-limited", 45_000),
+      new ProviderError("需要重新登录豆包", "login-required")
+    ])("preserves error details: $errorCode", async (expected) => {
+      const envelope = JSON.parse(JSON.stringify(runtimeErrorResponse(expected)));
+      vi.stubGlobal("chrome", {
+        runtime: { id: "test-extension", sendMessage: vi.fn().mockResolvedValue(envelope) },
+        tabs: { sendMessage: vi.fn().mockResolvedValue(envelope) }
+      });
+      const error = await send({ type: "CHECK_DOUBAO" }).catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(ProviderError);
+      expect(error).toMatchObject({ message: expected.message, errorCode: expected.errorCode });
+      expect((error as ProviderError).retryAfterMs).toBe(expected.retryAfterMs);
+    });
   });
 });

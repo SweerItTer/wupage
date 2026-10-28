@@ -11,6 +11,7 @@ import { localProviderNotice } from "../shared/local-notice";
 import { enhanceProviderSelect } from "../shared/provider-picker";
 import { normalizeAutoTranslation, setAutoTranslationEnabled } from "../shared/auto-translation";
 import { SETTINGS_KEY } from "../shared/defaults";
+import { doubaoProviderNotice, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -34,6 +35,9 @@ const GITHUB_URL = "https://github.com/mr-wuliu/wupage";
 const WEBSITE_URL = "https://wupage.mrwuliu.top/";
 
 let settings: ExtensionSettings;
+let settingsSave: Promise<void> = Promise.resolve();
+let floatingBallVersion = 0;
+let imageTranslationVersion = 0;
 let paragraphMode = false;
 let paragraphModeAvailable = true;
 let paragraphModeError: string | undefined;
@@ -73,10 +77,11 @@ async function init(): Promise<void> {
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
   provider.innerHTML = settings.providers
     .filter((entry) => entry.enabled !== false)
-    .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`)
+    .map((entry) => `<option value="${escapeHtml(entry.id)}" ${isDoubaoProviderUnavailable(entry) ? 'disabled title="此浏览器暂不支持豆包翻译"' : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   provider.value = settings.activeProviderId;
   enhanceProviderSelect(provider, settings.providers);
+  syncDoubaoTargetControls(settings, targetLang);
   updateLocalNotice();
   translationDisplayMode.innerHTML = TRANSLATION_DISPLAY_MODES
     .map((mode) => `<option value="${mode.value}">${mode.label}</option>`)
@@ -87,7 +92,7 @@ async function init(): Promise<void> {
   floatingBallEnabled = settings.floatingBallEnabled;
   updateFloatingBallButton();
   setImageTranslationToggle(imageTranslationButton, settings.imageTranslationEnabled === true);
-  setupOcrControl(imageTranslationButton, () => { settings.imageTranslationEnabled = false; setImageTranslationToggle(imageTranslationButton, false); });
+  setupOcrControl(imageTranslationButton, () => { imageTranslationVersion++; settings.imageTranslationEnabled = false; setImageTranslationToggle(imageTranslationButton, false); });
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   fileAccessHelp.hidden = Boolean(activeTab?.url);
   activeTabIsPdf = isLikelyPdfUrl(activeTab?.url);
@@ -112,10 +117,10 @@ async function init(): Promise<void> {
   }
   updatePageActionAvailability();
 
-  targetLang.addEventListener("change", savePopupSettings);
-  sourceLang.addEventListener("change", savePopupSettings);
-  provider.addEventListener("change", savePopupSettings);
-  translationDisplayMode.addEventListener("change", savePopupSettings);
+  targetLang.addEventListener("change", saveSettingsFromControl);
+  sourceLang.addEventListener("change", saveSettingsFromControl);
+  provider.addEventListener("change", saveSettingsFromControl);
+  translationDisplayMode.addEventListener("change", saveSettingsFromControl);
   pageToggleButton.addEventListener("click", togglePageTranslation);
   paragraphModeButton.addEventListener("click", toggleParagraphMode);
   floatingBallButton.addEventListener("click", toggleFloatingBall);
@@ -123,6 +128,7 @@ async function init(): Promise<void> {
     setButtonBusy(imageTranslationButton, true);
     const previous = settings.imageTranslationEnabled === true;
     try {
+      imageTranslationVersion++;
       settings.imageTranslationEnabled = !previous;
       await savePopupSettings();
       setImageTranslationToggle(imageTranslationButton, !previous);
@@ -169,7 +175,13 @@ async function init(): Promise<void> {
   }, { once: true });
 }
 
-async function savePopupSettings(): Promise<void> {
+function saveSettingsFromControl(): void {
+  void savePopupSettings().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : String(error));
+  });
+}
+
+function savePopupSettings(): Promise<void> {
   settings = {
     ...settings,
     sourceLang: sourceLang.value || "auto",
@@ -177,13 +189,19 @@ async function savePopupSettings(): Promise<void> {
     activeProviderId: provider.value,
     translationDisplayMode: translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
   };
-  await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
-  updateLocalNotice();
+  syncDoubaoTargetControls(settings, targetLang);
+  const snapshot = structuredClone(settings);
+  const save = settingsSave.catch(() => undefined).then(async () => {
+    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings: snapshot });
+    updateLocalNotice();
+  });
+  settingsSave = save;
+  return save;
 }
 
 function updateLocalNotice(): void {
   let notice = document.getElementById("localProviderNotice");
-  const message = localProviderNotice(settings);
+  const message = localProviderNotice(settings) ?? doubaoProviderNotice(settings);
   if (!notice && message) {
     notice = document.createElement("p"); notice.id = "localProviderNotice";
     notice.setAttribute("role", "status"); notice.style.cssText = "line-height:1.6;font-size:12px;padding:10px;border:1px solid #c7a557;border-radius:8px";
@@ -365,10 +383,18 @@ async function toggleAutoTranslation(): Promise<void> {
   let previous = normalizeAutoTranslation(settings.autoTranslation);
   setButtonBusy(autoTranslationButton, true);
   try {
+    await settingsSave.catch(() => undefined);
+    const floatingVersion = floatingBallVersion;
+    const imageVersion = imageTranslationVersion;
     const latest = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
     previous = normalizeAutoTranslation(latest.autoTranslation);
-    settings = { ...latest, autoTranslation: setAutoTranslationEnabled(previous, enabled) };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    settings = {
+      ...latest,
+      ...(floatingBallVersion !== floatingVersion ? { floatingBallEnabled: settings.floatingBallEnabled } : {}),
+      ...(imageTranslationVersion !== imageVersion ? { imageTranslationEnabled: settings.imageTranslationEnabled } : {}),
+      autoTranslation: setAutoTranslationEnabled(previous, enabled)
+    };
+    await savePopupSettings();
     updateAutoTranslationButton();
     const rules = settings.autoTranslation!;
     if (enabled && !rules.nonTargetLanguage && !rules.presetSites.length && !rules.customSites.some(site => site.enabled)) {
@@ -421,12 +447,13 @@ async function toggleFloatingBall(): Promise<void> {
   const previous = floatingBallEnabled;
   let saved = false;
   try {
+    floatingBallVersion++;
     floatingBallEnabled = !floatingBallEnabled;
     settings = {
       ...settings,
       floatingBallEnabled
     };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await savePopupSettings();
     saved = true;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (pageTranslationAvailable && !activeTabIsPdf && tab.id) {

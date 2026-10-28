@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { normalizeSettings } from "../src/shared/settings";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SETTINGS_KEY } from "../src/shared/defaults";
+import { getEffectiveProviderPerformance } from "../src/shared/performance";
+import { getSettings, normalizeSettings, saveSettings } from "../src/shared/settings";
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("normalizeSettings", () => {
   it("keeps custom model choices without losing provider credentials", () => {
@@ -77,6 +81,8 @@ describe("normalizeSettings", () => {
     });
 
     expect(settings.activeProviderId).toBe("openai-compatible");
+    expect(settings.providers.find((provider) => provider.id === "doubao-web"))
+      .toMatchObject({ enabled: true, chunkSize: 1200, concurrency: 1 });
     expect(settings.providers.find((provider) => provider.id === "openai-compatible"))
       .toMatchObject({
         performanceMode: "custom",
@@ -86,6 +92,7 @@ describe("normalizeSettings", () => {
     expect(settings.providers.map((provider) => provider.id)).toEqual([
       "microsoft-web-translate",
       "google-web-translate",
+      "doubao-web",
       "tencent-transmart",
       "yandex-web-translate",
       "volcengine-web-translate",
@@ -217,5 +224,81 @@ describe("normalizeSettings", () => {
     const provider = settings.providers.find((entry) => entry.type === "openai-compatible");
     expect(provider?.type === "openai-compatible" && provider.ollamaCompatibility)
       .toBe(value !== false);
+  });
+});
+
+describe("Doubao settings migration", () => {
+  it("retains an explicitly selected Doubao configuration across normalization", () => {
+    const normalized = normalizeSettings({
+      activeProviderId: "my-doubao",
+      providers: [{ type: "doubao-web", id: "my-doubao", label: "我的豆包", enabled: true }]
+    });
+
+    expect(normalized.activeProviderId).toBe("my-doubao");
+    expect(normalized.providers.find((provider) => provider.id === "my-doubao"))
+      .toMatchObject({ type: "doubao-web", label: "我的豆包", enabled: true });
+    expect(normalizeSettings(normalized)).toEqual(normalized);
+  });
+
+  it("updates the previous built-in label without overwriting custom names", () => {
+    const previousLabel = "豆包（网页登录，实验）";
+    const result = normalizeSettings({
+      activeProviderId: "doubao-web",
+      providers: [
+        { type: "doubao-web", id: "doubao-web", label: previousLabel, enabled: false },
+        { type: "doubao-web", id: "my-doubao", label: previousLabel }
+      ]
+    });
+    expect(result.providers.find((provider) => provider.id === "doubao-web"))
+      .toMatchObject({ label: "豆包（实验性）", enabled: false });
+    expect(result.providers.find((provider) => provider.id === "my-doubao")?.label).toBe(previousLabel);
+    const renamed = normalizeSettings({
+      providers: [{ type: "doubao-web", id: "doubao-web", label: "我的豆包" }]
+    });
+    expect(renamed.providers.find((provider) => provider.id === "doubao-web")?.label).toBe("我的豆包");
+    expect(normalizeSettings(result)).toEqual(result);
+  });
+
+  it("preserves disabled Doubao through storage round trips and discards unsupported credential fields", async () => {
+    let saved: unknown = {
+      activeProviderId: "google-web-translate",
+      providers: [{
+        type: "doubao-web", id: "doubao-web", label: "豆包", enabled: false,
+        apiKey: "not-a-supported-field", cookie: "not-a-supported-field", webId: "not-a-supported-field"
+      }]
+    };
+    const set = vi.fn(async (value: Record<string, unknown>) => { saved = value[SETTINGS_KEY]; });
+    vi.stubGlobal("chrome", { storage: { local: {
+      get: vi.fn(async () => ({ [SETTINGS_KEY]: saved })), set
+    } } });
+
+    const loaded = await getSettings();
+    await saveSettings(loaded);
+    const reloaded = await getSettings();
+
+    expect(reloaded.activeProviderId).toBe("google-web-translate");
+    expect(reloaded.providers.find((provider) => provider.id === "doubao-web")).toEqual({
+      type: "doubao-web", id: "doubao-web", label: "豆包", enabled: false,
+      performanceMode: "custom", chunkSize: 1200, concurrency: 1
+    });
+    expect(reloaded).toEqual(loaded);
+    expect(set).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Doubao conservative when legacy global settings or edited provider fields request more concurrency", () => {
+    const result = normalizeSettings({
+      activeProviderId: "doubao-web", chunkSize: 4000, concurrency: 8,
+      providers: [{
+        type: "doubao-web", id: "doubao-web", label: "豆包", enabled: true,
+        performanceMode: "inherit", chunkSize: 4000, concurrency: 8
+      }]
+    });
+
+    expect(getEffectiveProviderPerformance(result)).toEqual({
+      performanceMode: "custom", chunkSize: 1200, concurrency: 1
+    });
+    expect(result.chunkSize).toBe(4000);
+    expect(result.concurrency).toBe(8);
+    expect(getEffectiveProviderPerformance(result, "google-web-translate").concurrency).toBe(8);
   });
 });

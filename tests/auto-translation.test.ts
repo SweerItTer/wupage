@@ -7,7 +7,7 @@ import type { AutoTranslationSettings, ExtensionSettings } from "../src/shared/t
 describe("automatic page translation", () => {
   let settings: ExtensionSettings;
   let active: boolean;
-  let notify: () => void;
+  let notify: (event?: "stopped") => void;
   let storage: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void;
   let start: ReturnType<typeof vi.fn>;
   let stop: ReturnType<typeof vi.fn>;
@@ -33,9 +33,9 @@ describe("automatic page translation", () => {
   });
   afterEach(() => { dispose?.(); dispose = undefined; vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren(); });
 
-  function mount(config: Partial<AutoTranslationSettings>): void {
+  function mount(config: Partial<AutoTranslationSettings>, loadSettings = async () => settings): void {
     settings.autoTranslation = { enabled: true, nonTargetLanguage: false, presetSites: [], customSites: [], ...config };
-    dispose = initAutoTranslation({ loadSettings: async () => settings, start, stop, active: () => active,
+    dispose = initAutoTranslation({ loadSettings, start, stop, active: () => active,
       subscribe: listener => { notify = listener; return () => {}; }, detectLanguage: detect });
   }
   async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(400); }
@@ -131,6 +131,36 @@ describe("automatic page translation", () => {
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     document.dispatchEvent(new Event("visibilitychange")); await settle();
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the saved target when the initial settings response arrives late", async () => {
+    let release!: (value: ExtensionSettings) => void;
+    const initial = new Promise<ExtensionSettings>(resolve => { release = resolve; });
+    mount({ customSites: [{ id: "site", pattern: "example.com/docs/*", enabled: true }] }, () => initial);
+    const previous = structuredClone(settings);
+    settings = { ...settings, targetLang: "ja" };
+    storage({ "wupage.settings": { newValue: settings } }, "local");
+    await settle();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ targetLang: "ja" }));
+    release(previous);
+    await settle();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit stop while the initial settings read is pending", async () => {
+    let release!: (value: ExtensionSettings) => void;
+    const initial = new Promise<ExtensionSettings>(resolve => { release = resolve; });
+    mount({ customSites: [{ id: "site", pattern: "example.com/docs/*", enabled: true }] }, () => initial);
+    notify("stopped");
+    release(settings);
+    await settle();
+    expect(start).not.toHaveBeenCalled();
+    storage({ "wupage.settings": { newValue: { ...settings, autoTranslation: { ...settings.autoTranslation, enabled: false } } } }, "local");
+    storage({ "wupage.settings": { newValue: settings } }, "local");
+    await settle();
     expect(start).toHaveBeenCalledTimes(1);
   });
 

@@ -2,15 +2,14 @@ import { languageFamily, matchesAutoTranslationSite, normalizeAutoTranslation } 
 import { SETTINGS_KEY } from "../shared/defaults";
 import type { ExtensionSettings } from "../shared/types";
 import { hasPageTranslations } from "./dom";
-import { getPageTranslationState, hidePageTranslation, startPageTranslation, subscribePageTranslationState } from "./page-translation";
-import { sendRuntimeRequest } from "./runtime";
+import { getPageTranslationState, hidePageTranslation, loadPageTranslationSettings, startPageTranslation, subscribePageTranslationState } from "./page-translation";
 
 interface AutoTranslationDependencies {
   loadSettings: () => Promise<ExtensionSettings>;
   start: (settings: ExtensionSettings) => Promise<unknown>;
   active: () => boolean;
   stop: () => void;
-  subscribe: (listener: () => void) => () => void;
+  subscribe: typeof subscribePageTranslationState;
   detectLanguage?: (text: string) => Promise<{ languages: Array<{ language: string; percentage: number }> }>;
 }
 
@@ -21,7 +20,7 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
   if (typeof document === "undefined" || typeof window === "undefined" || window.top !== window
     || !/^https?:$/u.test(location.protocol) || !["text/html", "application/xhtml+xml"].includes(document.contentType)) return () => {};
   const deps: AutoTranslationDependencies = {
-    loadSettings: () => sendRuntimeRequest<ExtensionSettings>({ type: "GET_SETTINGS" }),
+    loadSettings: loadPageTranslationSettings,
     start: startPageTranslation,
     active: () => getPageTranslationState().active || hasPageTranslations(),
     stop: hidePageTranslation,
@@ -42,9 +41,9 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
   let disposed = false;
   let lastSample = "";
 
-  const unsubscribe = deps.subscribe(() => {
+  const unsubscribe = deps.subscribe(event => {
     const active = deps.active();
-    if (!transitioning && previouslyActive && !active) {
+    if (!transitioning && !active && (previouslyActive || event === "stopped")) {
       handled = true; owned = false; generation++;
     } else if (active) handled = true;
     previouslyActive = active;
@@ -107,12 +106,15 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
     finally { running = false; if (dirty) schedule(); }
   }
 
-  function applySettings(value: ExtensionSettings): void {
+  function applySettings(value: ExtensionSettings, initial = false): void {
     const config = normalizeAutoTranslation(value.autoTranslation);
-    const identity = (entry: ExtensionSettings | undefined): string => JSON.stringify([entry?.autoTranslation, entry?.targetLang]);
+    const identity = (entry: ExtensionSettings | undefined): string => JSON.stringify([entry?.autoTranslation, entry?.sourceLang, entry?.targetLang]);
     const changed = identity(settings) !== identity({ ...value, autoTranslation: config });
+    const rulesChanged = JSON.stringify(settings?.autoTranslation) !== JSON.stringify(config);
+    const stopped = handled && !owned && !deps.active();
     generation++;
-    if (changed) { stopOwned(); handled = deps.active(); lastSample = ""; }
+    // Language changes must not resume a page the user explicitly restored.
+    if (changed) { stopOwned(); handled = deps.active() || stopped && (initial || !rulesChanged); lastSample = ""; }
     settings = { ...value, autoTranslation: config };
     if (config.enabled) observer.observe(document.documentElement, {
       childList: true, subtree: true, characterData: true, attributes: true,
@@ -148,7 +150,7 @@ export function initAutoTranslation(overrides: Partial<AutoTranslationDependenci
   window.addEventListener("pageshow", pageChanged);
   window.addEventListener("pagehide", pageHidden);
   document.addEventListener("visibilitychange", visibilityChanged);
-  void deps.loadSettings().then(value => { if (!disposed && !settings && value) applySettings(value); }).catch(() => {});
+  void deps.loadSettings().then(value => { if (!disposed && !settings && value) applySettings(value, true); }).catch(() => {});
 
   function dispose(): void {
     if (disposed) return;

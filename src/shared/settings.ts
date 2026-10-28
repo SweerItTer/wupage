@@ -128,6 +128,18 @@ function normalizeProvider(
   globalChunkSize: number,
   globalConcurrency: number
 ): ProviderConfig {
+  if (provider.type === "doubao-web") {
+    return {
+      type: "doubao-web",
+      id: provider.id,
+      label: provider.id === "doubao-web" && provider.label === "豆包（网页登录，实验）"
+        ? "豆包（实验性）" : provider.label,
+      enabled: provider.enabled !== false,
+      performanceMode: "custom",
+      chunkSize: 1200,
+      concurrency: 1
+    };
+  }
   if (supportsServiceMode(provider)) provider = normalizeServiceConfig(provider);
   const previousLabels: Record<string, string[]> = {
     "microsoft-web-translate": ["Microsoft 免费翻译", "Microsoft Translator API（Azure）", "Microsoft Translator"],
@@ -208,7 +220,7 @@ function isProviderConfig(value: unknown): value is ProviderConfig {
   if (value.type === "google-web-translate" || value.type === "microsoft-web-translate"
     || value.type === "tencent-transmart" || value.type === "yandex-web-translate"
     || value.type === "volcengine-web-translate" || value.type === "mymemory"
-    || value.type === "firefox-local") {
+    || value.type === "firefox-local" || value.type === "doubao-web") {
     return ["id", "label"].every((key) => typeof value[key] === "string");
   }
 

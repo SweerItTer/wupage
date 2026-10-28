@@ -31,6 +31,15 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
       enabled: true
     },
     {
+      type: "doubao-web",
+      id: "doubao-web",
+      label: "豆包（实验性）",
+      enabled: true,
+      performanceMode: "custom",
+      chunkSize: 1200,
+      concurrency: 1
+    },
+    {
       type: "tencent-transmart",
       id: "tencent-transmart",
       label: "腾讯翻译",

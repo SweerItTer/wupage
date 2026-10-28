@@ -52,6 +52,9 @@ function officialHost(address: string, domains: string[]): boolean {
 }
 
 export function getProviderUsage(provider: ProviderConfig): ProviderUsage {
+  if (provider.type === "doubao-web") return { service: "豆包（实验性）", quota: "以豆包服务实际提供的额度为准。",
+    request: unknown, rate: unknown, concurrency: unknown,
+    sources: [source("豆包", "https://www.doubao.com/")] };
   if (supportsServiceMode(provider)) {
     const useApi = provider.serviceMode === "api";
     if (!useApi && provider.type !== "mymemory") {

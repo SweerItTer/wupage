@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
-import type { RuntimeRequest, RuntimeResponse } from "../src/shared/types";
+import type { ExtensionSettings, RuntimeRequest, RuntimeResponse } from "../src/shared/types";
 
 describe("popup language controls", () => {
   afterEach(() => {
@@ -13,6 +13,95 @@ describe("popup language controls", () => {
     vi.unstubAllGlobals();
     vi.resetModules();
     document.documentElement.replaceChildren();
+  });
+
+  async function mountWithSave(save: (settings: ExtensionSettings) => Promise<RuntimeResponse>) {
+    let saved = structuredClone(DEFAULT_SETTINGS);
+    document.open();
+    document.write(readFileSync(resolve(process.cwd(), "popup.html"), "utf8"));
+    document.close();
+    const sendToTab = vi.fn(async (_tabId: number, request: RuntimeRequest): Promise<RuntimeResponse> => {
+      if (request.type === "GET_PARAGRAPH_MODE") return { ok: true, data: { enabled: false } };
+      if (request.type === "GET_TRANSLATION_STATE") return { ok: true, data: { translated: true } };
+      return { ok: true };
+    });
+    vi.stubGlobal("chrome", {
+      runtime: { sendMessage: async (request: RuntimeRequest): Promise<RuntimeResponse> => {
+        if (request.type === "GET_OCR_STATUS") return { ok: true, data: { state: "installed", total: 100, downloaded: 100 } };
+        if (request.type === "GET_SETTINGS") return { ok: true, data: structuredClone(saved) };
+        if (request.type === "SAVE_SETTINGS") {
+          const response = await save(request.settings);
+          if (response.ok) saved = structuredClone(request.settings);
+          return response;
+        }
+        return { ok: true };
+      } },
+      tabs: { query: async () => [{ id: 1, url: "https://example.com/article" }], sendMessage: sendToTab }
+    });
+    await import("../src/popup/index");
+    await vi.waitFor(() => expect(query<HTMLButtonElement>("#pageToggle").disabled).toBe(false));
+    return { target: query<HTMLSelectElement>("#targetLang"), sendToTab };
+  }
+
+  it("saves rapid language and control changes in order when the first save is delayed", async () => {
+    let finishFirst!: () => void;
+    const firstSave = new Promise<void>((resolve) => { finishFirst = resolve; });
+    const snapshots: ExtensionSettings[] = [];
+    const completed: string[] = [];
+    let stored = structuredClone(DEFAULT_SETTINGS);
+    const { target, sendToTab } = await mountWithSave(async (settings) => {
+      snapshots.push(structuredClone(settings));
+      if (snapshots.length === 1) await firstSave;
+      stored = structuredClone(settings);
+      completed.push(settings.targetLang);
+      return { ok: true };
+    });
+
+    target.value = "ja";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(snapshots).toHaveLength(1));
+    query<HTMLSelectElement>("#sourceLang").value = "en";
+    query<HTMLSelectElement>("#translationDisplayMode").value = "replace";
+    target.value = "zh-CN";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    query<HTMLButtonElement>("#floatingBall").click();
+    query<HTMLButtonElement>("#autoTranslation").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(snapshots).toHaveLength(1);
+    finishFirst();
+    await vi.waitFor(() => expect(completed).toHaveLength(4));
+
+    expect(completed).toEqual(["ja", "zh-CN", "zh-CN", "zh-CN"]);
+    expect(stored).toMatchObject({ sourceLang: "en", targetLang: "zh-CN", translationDisplayMode: "replace", floatingBallEnabled: false });
+    expect(snapshots[0]).toMatchObject({ sourceLang: "auto", targetLang: "ja", translationDisplayMode: "bilingual" });
+    expect(snapshots[1]).toMatchObject({ sourceLang: "en", targetLang: "zh-CN", translationDisplayMode: "replace", floatingBallEnabled: true });
+    expect(snapshots[2]).toMatchObject({ sourceLang: "en", targetLang: "zh-CN", translationDisplayMode: "replace", floatingBallEnabled: false });
+    expect(snapshots[3]).toMatchObject({ sourceLang: "en", targetLang: "zh-CN", autoTranslation: { enabled: true } });
+    expect(stored.autoTranslation?.enabled).toBe(true);
+    expect(target.value).toBe("zh-CN");
+    expect(sendToTab.mock.calls.some(([, request]) => request.type === "TRANSLATE_PAGE")).toBe(false);
+  });
+
+  it("permits the next language save after an earlier save fails", async () => {
+    let attempts = 0;
+    let stored = structuredClone(DEFAULT_SETTINGS);
+    const { target, sendToTab } = await mountWithSave(async (settings) => {
+      attempts += 1;
+      if (attempts === 1) return { ok: false, error: "设置保存失败" };
+      stored = structuredClone(settings);
+      return { ok: true };
+    });
+
+    target.value = "ja";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(query<HTMLElement>("#status").textContent).toBe("设置保存失败"));
+    target.value = "zh-CN";
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(attempts).toBe(2));
+
+    expect(stored.targetLang).toBe("zh-CN");
+    expect(query<HTMLButtonElement>("#pageToggle").disabled).toBe(false);
+    expect(sendToTab.mock.calls.some(([, request]) => request.type === "TRANSLATE_PAGE")).toBe(false);
   });
 
   it("renders and saves the source-to-target language pair", async () => {

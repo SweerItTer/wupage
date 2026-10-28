@@ -2,7 +2,7 @@ import { BUILT_IN_PROVIDER_IDS, DEFAULT_SETTINGS } from "../shared/defaults";
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from "../shared/languages";
 import { TRANSLATION_DISPLAY_MODES } from "../shared/display-modes";
 import { sendRuntimeMessage } from "../shared/messaging";
-import type { ExtensionSettings, ProviderConfig, TranslationApiOptions } from "../shared/types";
+import type { DoubaoStatus, ExtensionSettings, ProviderConfig, TranslationApiOptions } from "../shared/types";
 import { supportsServiceMode, translationApiOptions } from "../shared/translation-service";
 import "./styles.css";
 import { setImageTranslationToggle, setupOcrControl } from "../shared/ocr-control";
@@ -16,6 +16,8 @@ import "../shared/appearance.css";
 import { normalizeSelectionTranslation, type DictionaryProvider, type SelectionTriggerStyle } from "../shared/dictionary";
 import { RequestTemplateError, supportsRequestTemplate, validateRequestTemplate } from "../shared/request-template";
 import { readRequestTemplate, setupProviderTabs } from "./provider-advanced";
+import { isDoubaoBrowserSupported } from "../shared/doubao";
+import { formatDoubaoStatus, isDoubaoProviderUnavailable, syncDoubaoTargetControls } from "../shared/doubao-ui";
 
 const settingsNavigation = setupSettingsNavigation(query<HTMLElement>(".settings"));
 const appearanceControls = setupAppearanceControls(query<HTMLElement>("#appearanceSettings"));
@@ -88,6 +90,17 @@ let settings: ExtensionSettings;
 let editingProviderId: string | undefined;
 let disposeLocalControl: (() => void) | undefined;
 let activeProviderTest: { providerId: string; status: HTMLElement; message: string } | undefined;
+let providerFormVersion = 0;
+let doubaoStatus: DoubaoStatus = { state: "unknown" };
+let doubaoCheck: Promise<void> | undefined;
+let doubaoStatusRevision = 0;
+let doubaoRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let optionsClosed = false;
+
+window.addEventListener("pagehide", () => {
+  optionsClosed = true;
+  clearTimeout(doubaoRetryTimer);
+}, { once: true });
 
 void init().catch((error: unknown) => {
   setStatus(error instanceof Error ? error.message : String(error));
@@ -230,6 +243,7 @@ function renderProviderPicker(keepOpen: boolean): void {
 
 function renderProviderMenuRow(provider: ProviderConfig): string {
   const enabled = provider.enabled !== false;
+  const unavailable = isDoubaoProviderUnavailable(provider);
   const builtIn = BUILT_IN_PROVIDER_IDS.has(provider.id);
   return `
     <div class="provider-menu-row" data-built-in="${builtIn}" role="group">
@@ -241,7 +255,8 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
         data-provider-id="${escapeAttr(provider.id)}"
         aria-selected="${provider.id === editingProviderId}"
         data-enabled="${enabled}"
-        title="${escapeAttr(provider.label)}${enabled ? "" : "（已停用，可编辑）"}"
+        ${unavailable ? "disabled" : ""}
+        title="${unavailable ? "此浏览器暂不支持豆包翻译" : `${escapeAttr(provider.label)}${enabled ? "" : "（已停用，可编辑）"}`}"
       >
         ${providerIconMarkup(provider)}
         <span class="provider-option-label">${escapeHtml(provider.label)}</span>
@@ -271,14 +286,48 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
 
 function renderProviderForm(): void {
   invalidateProviderTest();
+  const version = ++providerFormVersion;
+  clearTimeout(doubaoRetryTimer);
   disposeLocalControl?.(); disposeLocalControl = undefined;
   const provider = getEditingProvider();
   providerPerformance.innerHTML = provider.type === "firefox-local"
     ? '<p class="hint">本地翻译使用固定分块大小 800、并发数 1。</p>'
-    : renderProviderPerformance(provider);
+    : provider.type === "doubao-web"
+      ? '<p class="hint">豆包翻译使用固定分块大小 1200、并发数 1。</p>'
+      : renderProviderPerformance(provider);
   providerPerformance.querySelector("[data-field='inheritPerformance']")
     ?.addEventListener("change", updateProviderPerformanceFields);
   updateProviderPerformanceFields();
+  syncDoubaoTargetControls(settings, targetLang);
+  if (provider.type === "doubao-web") {
+    setProviderFormMarkup(provider, `
+      <div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div>
+      <div class="doubao-setup">
+        <h3>豆包（实验性）</h3>
+        <p>无需 API Key。在当前浏览器打开豆包并登录，即可开始翻译。连接异常时可点击“重新检测”。</p>
+        <p>翻译会将待译文本发送到豆包；检测只发送固定短文本。</p>
+        <div class="doubao-actions">
+          <button type="button" data-action="open-doubao">打开豆包并登录</button>
+          <button id="test" type="button" data-action="check-doubao">重新检测</button>
+        </div>
+        <p data-role="doubao-status" role="status" aria-live="polite"></p>
+        <p class="hint">如提示登录失效，请重新登录后重试翻译，或点击重新检测；如遇限流，请等待。登录状态由浏览器管理，无需复制 Cookie。</p>
+      </div>`);
+    providerForm.querySelector<HTMLButtonElement>("[data-action='open-doubao']")?.addEventListener("click", () => {
+      void chrome.tabs.create({ url: "https://www.doubao.com/" }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error)));
+    });
+    if (!isDoubaoBrowserSupported()) doubaoStatus = { state: "unsupported-browser" };
+    renderDoubaoStatus();
+    if (isDoubaoBrowserSupported() && !doubaoCheck) {
+      const revision = doubaoStatusRevision;
+      void sendRuntimeMessage<DoubaoStatus>({ type: "GET_DOUBAO_STATUS" }).then((result) => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision || !result) return;
+        doubaoStatus = result;
+        renderDoubaoStatus();
+      }).catch(() => { /* Keep the actionable initial state if the background is restarting. */ });
+    }
+    return;
+  }
   if (provider.type === "firefox-local") {
     setProviderFormMarkup(provider, `<div class="grid"><label>显示名称 <input data-field="label" type="text" value="${escapeAttr(provider.label)}" /></label></div><div data-local-model-control></div>`);
     updateLocalControl();
@@ -414,6 +463,57 @@ function renderProviderForm(): void {
     <label>请求头 JSON <textarea data-field="headers">${escapeHtml(JSON.stringify(provider.headers, null, 2))}</textarea></label>
     <label>请求体模板 <textarea data-field="bodyTemplate">${escapeHtml(provider.bodyTemplate)}</textarea></label>
   `);
+}
+
+function renderDoubaoStatus(): void {
+  if (optionsClosed || getEditingProvider().type !== "doubao-web") return;
+  const statusElement = providerForm.querySelector<HTMLElement>("[data-role='doubao-status']");
+  const checkButton = providerForm.querySelector<HTMLButtonElement>("[data-action='check-doubao']");
+  const retryIn = Math.max(0, (doubaoStatus.retryAt ?? 0) - Date.now());
+  if (statusElement) {
+    statusElement.textContent = formatDoubaoStatus(doubaoStatus);
+    statusElement.dataset.state = doubaoStatus.state;
+  }
+  const disabled = Boolean(doubaoCheck) || doubaoStatus.state === "checking" || !isDoubaoBrowserSupported() || retryIn > 0;
+  if (checkButton) checkButton.disabled = disabled;
+  clearTimeout(doubaoRetryTimer);
+  if (retryIn > 0) doubaoRetryTimer = setTimeout(renderDoubaoStatus, Math.min(retryIn + 10, 1000));
+  else if (doubaoStatus.state === "checking" && !doubaoCheck) {
+    const version = providerFormVersion;
+    const revision = doubaoStatusRevision;
+    doubaoRetryTimer = setTimeout(() => {
+      void sendRuntimeMessage<DoubaoStatus>({ type: "GET_DOUBAO_STATUS" }).then((result) => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision || !result) return;
+        doubaoStatus = result;
+        renderDoubaoStatus();
+      }).catch(() => {
+        if (version !== providerFormVersion || revision !== doubaoStatusRevision) return;
+        doubaoStatus = { state: "network-error" };
+        renderDoubaoStatus();
+      });
+    }, 1000);
+  }
+}
+
+function checkDoubao(): Promise<void> {
+  if (doubaoCheck) return doubaoCheck;
+  if (!isDoubaoBrowserSupported()) {
+    doubaoStatus = { state: "unsupported-browser" };
+    renderDoubaoStatus();
+    return Promise.resolve();
+  }
+  if ((doubaoStatus.retryAt ?? 0) > Date.now()) return Promise.resolve();
+  doubaoStatusRevision += 1;
+  doubaoStatus = { state: "checking" };
+  doubaoCheck = sendRuntimeMessage<DoubaoStatus>({ type: "CHECK_DOUBAO" })
+    .then((result) => { doubaoStatus = result; })
+    .catch(() => { doubaoStatus = { state: "network-error", checkedAt: Date.now() }; })
+    .finally(() => {
+      doubaoCheck = undefined;
+      renderDoubaoStatus();
+    });
+  renderDoubaoStatus();
+  return doubaoCheck;
 }
 
 function updateLocalControl(): void {
@@ -563,7 +663,7 @@ async function handleProviderAction(action: string, providerId: string): Promise
 
 async function selectProvider(providerId: string): Promise<void> {
   const provider = settings.providers.find((entry) => entry.id === providerId);
-  if (!provider) return;
+  if (!provider || isDoubaoProviderUnavailable(provider)) return;
   invalidateProviderTest();
   settings = readSettingsFromForm();
   if (provider.enabled !== false) settings.activeProviderId = providerId;
@@ -730,6 +830,10 @@ function invalidateProviderTest(): void {
 }
 
 async function testProvider(): Promise<void> {
+  if (getEditingProvider().type === "doubao-web") {
+    await checkDoubao();
+    return;
+  }
   invalidateProviderTest();
   const inlineStatus = providerForm.querySelector<HTMLElement>("[data-role='provider-test-status']");
   if (!inlineStatus) return;
@@ -781,7 +885,9 @@ function readSettingsFromForm(): ExtensionSettings {
   }
   const activeProvider = {
     ...readProviderFromForm(getEditingProvider()),
-    ...(getEditingProvider().type === "firefox-local" ? { performanceMode: "custom", chunkSize: 800, concurrency: 1 } : readProviderPerformance())
+    ...(getEditingProvider().type === "firefox-local" ? { performanceMode: "custom", chunkSize: 800, concurrency: 1 }
+      : getEditingProvider().type === "doubao-web" ? { performanceMode: "custom", chunkSize: 1200, concurrency: 1 }
+        : readProviderPerformance())
   } as ProviderConfig;
   if (supportsRequestTemplate(activeProvider)) {
     try {
@@ -875,7 +981,7 @@ function readProviderFromForm(provider: ProviderConfig): ProviderConfig {
     return { ...provider, label: field("label").trim() || provider.label,
       serviceMode: field("serviceMode") === "api" ? "api" : "free", api };
   }
-  if (provider.type === "firefox-local") {
+  if (provider.type === "firefox-local" || provider.type === "doubao-web") {
     return { ...provider, label: field("label").trim() || provider.label };
   }
   if (provider.type === "microsoft-translator") {
