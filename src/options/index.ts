@@ -17,6 +17,9 @@ import "../shared/appearance.css";
 import { normalizeSelectionTranslation, type DictionaryProvider, type SelectionTriggerStyle } from "../shared/dictionary";
 import { RequestTemplateError, supportsRequestTemplate, validateRequestTemplate } from "../shared/request-template";
 import { readRequestTemplate, setupProviderTabs } from "./provider-advanced";
+import { renderUiIcons, uiIconMarkup } from "../shared/ui-icons";
+
+renderUiIcons();
 
 const settingsNavigation = setupSettingsNavigation(query<HTMLElement>(".settings"));
 const shortcutControls = setupShortcutSettings(query<HTMLElement>("#shortcutSettings"));
@@ -265,7 +268,7 @@ function renderProviderMenuRow(provider: ProviderConfig): string {
           data-provider-id="${escapeAttr(provider.id)}"
           title="删除 ${escapeAttr(provider.label)}"
           aria-label="删除 ${escapeAttr(provider.label)}"
-        >-</button>
+        >${uiIconMarkup("trash")}</button>
       `}
     </div>
   `;
@@ -480,7 +483,7 @@ function renderModelControl(provider: ModelProvider): string {
     <label for="providerModel">模型</label>
     <div class="model-toolbar">
       <select id="providerModel" data-field="model">${renderOptions(models, provider.model)}</select>
-      <button type="button" class="icon-button add-model" data-action="manage-model" title="添加或修改模型" aria-label="添加或修改模型">+</button>
+      <button type="button" class="icon-button add-model" data-action="manage-model" title="添加或修改模型" aria-label="添加或修改模型">${uiIconMarkup("plus")}</button>
       ${renderTestButton()}
     </div>
   </div>`;

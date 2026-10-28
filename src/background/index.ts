@@ -62,10 +62,16 @@ async function handleMessage(request: RuntimeRequest, sender: chrome.runtime.Mes
       await chrome.runtime.openOptionsPage();
       return null;
     case "GET_SETTINGS": {
-      const settings = await getSettings();
-      if (settings.imageTranslationEnabled && !await installedRevision()) {
-        settings.imageTranslationEnabled = false;
-        await saveSettings(settings);
+      let settings = await getSettings();
+      if (settings.imageTranslationEnabled) {
+        const installed = await installedRevision();
+        // Model checks may finish after another page has saved new settings.
+        // Return that version and only change its image toggle when needed.
+        settings = await getSettings();
+        if (!installed && settings.imageTranslationEnabled) {
+          settings.imageTranslationEnabled = false;
+          await saveSettings(settings);
+        }
       }
       return settings;
     }

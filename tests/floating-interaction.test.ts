@@ -630,20 +630,51 @@ describe("floating translation interactions", () => {
     expect(add.hidden).toBe(false);
     expect(add.disabled).toBe(false);
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     expect(stored.autoTranslation).toMatchObject({ enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [
       { id: expect.any(String), pattern: window.location.host, enabled: true }
     ] });
     await vi.waitFor(() => expect(add.disabled).toBe(false));
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("+"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("plus"));
     expect(stored.autoTranslation!.excludedSites).toEqual([window.location.host]);
-    add.click(); await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    add.click(); await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     expect(stored.autoTranslation!.excludedSites).toBeUndefined();
     expect(stored.autoTranslation!.customSites).toHaveLength(1);
     stored.autoTranslation.enabled = false;
     storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
     expect(add.hidden).toBe(true);
+  });
+
+  it("does not overwrite saved menu settings when an older refresh finishes later", async () => {
+    const previous = structuredClone(stored);
+    let finishSettings!: (value: unknown) => void;
+    let delay = true;
+    const runtime = vi.mocked(sendRuntimeRequest).getMockImplementation()!;
+    vi.mocked(sendRuntimeRequest).mockImplementation(request => {
+      if (request.type === "GET_SETTINGS" && delay) {
+        delay = false;
+        return new Promise(resolve => { finishSettings = resolve; });
+      }
+      return runtime(request);
+    });
+    query("#wupage-floating-ball").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+    await vi.waitFor(() => expect(finishSettings).toBeTypeOf("function"));
+    stored = { ...stored, sourceLang: "ja", targetLang: "en", activeProviderId: "deepseek", translationDisplayMode: "replace",
+      contextMenuTranslationEnabled: false, selectionTranslation: { enabled: false, provider: "bing", style: "underline" },
+      autoTranslation: { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] } };
+    storageChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(query("[data-action='auto-translation']").getAttribute("aria-pressed")).toBe("true");
+    finishSettings(previous);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(query("[data-action='auto-translation']").getAttribute("aria-pressed")).toBe("true");
+    expect(query<HTMLButtonElement>("[data-action='add-auto-site']").hidden).toBe(false);
+    expect(query<HTMLSelectElement>("[data-role='source-lang']").value).toBe("ja");
+    expect(query<HTMLSelectElement>("[data-role='target-lang']").value).toBe("en");
+    expect(query<HTMLSelectElement>("[data-role='provider']").value).toBe("deepseek");
+    expect(query<HTMLSelectElement>("[data-role='display-mode']").value).toBe("replace");
+    expect(query("[data-action='selection-translation']").getAttribute("aria-pressed")).toBe("false");
+    expect(query("[data-action='context-menu-translation']").getAttribute("aria-pressed")).toBe("false");
   });
 
   it("keeps a failed website addition retryable without losing existing rules", async () => {
@@ -659,10 +690,10 @@ describe("floating translation interactions", () => {
     await vi.waitFor(() => expect(query("[data-role='translation-status']").textContent).toContain("添加网站失败"));
     expect(stored.autoTranslation.customSites).toEqual([]);
     expect(add.disabled).toBe(false);
-    expect(add.textContent).toBe("+");
+    expect(add.querySelector('svg')?.dataset.icon).toBe("plus");
     vi.mocked(sendRuntimeRequest).mockImplementation(runtime);
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
   });
 });
 

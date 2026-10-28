@@ -167,14 +167,14 @@ try{
     await popup.locator('.popup').screenshot({path:path.join(output,`popup-add-site-${width}.png`)});
   }
   await addSite.click();
-  await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').textContent==='✓');
+  await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').querySelector('svg')?.dataset.icon==='tick');
   assert.equal(await addSite.isDisabled(),false);
   const addedRules=await popup.evaluate(async()=>(await chrome.runtime.sendMessage({type:'GET_SETTINGS'})).data.autoTranslation);
   assert.equal(addedRules.customSites.length,1);assert.equal(addedRules.customSites[0].pattern,new URL(origin).host);
   assert.equal(addedRules.customSites[0].enabled,true);assert.equal(addedRules.nonTargetLanguage,true);
   await popup.reload();await popup.locator('#translationDisplayMode:enabled').waitFor();
-  assert.equal(await addSite.textContent(),'✓');assert.equal(await addSite.isDisabled(),false);
-  await addSite.click();await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').textContent==='+');
+  assert.equal(await addSite.locator('svg').getAttribute('data-icon'),'tick');assert.equal(await addSite.isDisabled(),false);
+  await addSite.click();await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').querySelector('svg')?.dataset.icon==='plus');
   const excludedRules=await popup.evaluate(async()=>(await chrome.runtime.sendMessage({type:'GET_SETTINGS'})).data.autoTranslation);
   assert.equal(excludedRules.enabled,true);assert.equal(excludedRules.nonTargetLanguage,true);
   assert.deepEqual(excludedRules.excludedSites,[new URL(origin).host]);
@@ -188,8 +188,8 @@ try{
   const savedExclusion=await options.evaluate(async()=>(await chrome.runtime.sendMessage({type:'GET_SETTINGS'})).data.autoTranslation);
   assert.deepEqual(savedExclusion.excludedSites,[new URL(origin).host]);
   await popup.reload();await popup.locator('#translationDisplayMode:enabled').waitFor();
-  assert.equal(await addSite.textContent(),'+');
-  await addSite.click();await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').textContent==='✓');
+  assert.equal(await addSite.locator('svg').getAttribute('data-icon'),'plus');
+  await addSite.click();await popup.waitForFunction(()=>document.querySelector('#addAutoTranslationSite').querySelector('svg')?.dataset.icon==='tick');
   await quick.bringToFront();await quick.locator(translation).first().waitFor({timeout:12000});
   await options.reload();await options.waitForFunction(host=>[...document.querySelectorAll('#autoTranslateSites .auto-site-pattern')].some(input=>input.value===host),new URL(origin).host);
   const savedRow=options.locator('.auto-site-row').filter({has:options.locator('.auto-site-pattern')});
@@ -214,16 +214,16 @@ try{
   await floatingAdd.waitFor({state:'visible'});await quick.waitForFunction(()=>!document.querySelector('[data-action="add-auto-site"]').disabled);
   assert.equal(await quick.locator(translation).count(),0,'a site-only configuration must wait until the current site is added');
   await floatingAdd.click();await quick.locator(translation).first().waitFor({timeout:12000});
-  await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').textContent==='✓');
+  await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').querySelector('svg')?.dataset.icon==='tick');
   const floatingRules=await options.evaluate(async()=>(await chrome.runtime.sendMessage({type:'GET_SETTINGS'})).data.autoTranslation);
   assert.equal(floatingRules.nonTargetLanguage,false);assert.deepEqual(floatingRules.presetSites,['github.com']);
   assert.equal(floatingRules.customSites.length,1);assert.equal(floatingRules.customSites[0].pattern,new URL(origin).host);
   await quick.locator('#wupage-floating-menu').screenshot({path:path.join(output,'floating-add-site.png')});
-  await floatingAdd.click();await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').textContent==='+');
+  await floatingAdd.click();await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').querySelector('svg')?.dataset.icon==='plus');
   await quick.waitForFunction(()=>!document.querySelector('.wupage-translation'));
   assert.equal(await floatingAuto.getAttribute('aria-pressed'),'true');
   await floatingAdd.click();await quick.locator(translation).first().waitFor({timeout:12000});
-  await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').textContent==='✓');
+  await quick.waitForFunction(()=>document.querySelector('[data-action="add-auto-site"]').querySelector('svg')?.dataset.icon==='tick');
   await floatingAuto.click();await quick.waitForFunction(()=>!document.querySelector('.wupage-translation'));
   await quick.close();
   assert.deepEqual(errors,[]);

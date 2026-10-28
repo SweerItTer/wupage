@@ -22,6 +22,8 @@ describe("popup translation interactions", () => {
     save = vi.fn(async () => undefined);
     paragraph = vi.fn(async (enabled: boolean) => ({ enabled }));
     stored = structuredClone(DEFAULT_SETTINGS);
+    const listeners = new Set<typeof settingsChanged>();
+    settingsChanged = (changes, area) => { for (const listener of listeners) listener(changes, area); };
     vi.stubGlobal("chrome", {
       runtime: { sendMessage: async (request: RuntimeRequest): Promise<RuntimeResponse> => {
         if (request.type === "GET_SETTINGS") return { ok: true, data: structuredClone(stored) };
@@ -30,8 +32,8 @@ describe("popup translation interactions", () => {
         return { ok: true };
       } },
       storage: { onChanged: {
-        addListener: (listener: typeof settingsChanged) => { settingsChanged = listener; },
-        removeListener: vi.fn()
+        addListener: (listener: typeof settingsChanged) => { listeners.add(listener); },
+        removeListener: (listener: typeof settingsChanged) => { listeners.delete(listener); }
       } },
       tabs: {
         query: async () => [{ id: 4, url: "https://example.com/article" }],
@@ -244,7 +246,7 @@ describe("popup translation interactions", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     stored.selectionTranslation = { enabled: true, provider: "bing", style: "underline" };
     stored.autoTranslation = { enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [] };
-    const changes = observeOtherControls(toggle);
+    const changes = observeOtherControls(toggle, [document.querySelector("#autoTranslation")!, document.querySelector("#addAutoTranslationSite")!]);
     toggle.click();
     await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("false"));
     expect(stored.selectionTranslation).toEqual({ enabled: false, provider: "bing", style: "underline" });
@@ -252,6 +254,7 @@ describe("popup translation interactions", () => {
     await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
     expect(stored.selectionTranslation).toEqual({ enabled: true, provider: "bing", style: "underline" });
     expect(stored.autoTranslation).toEqual({ enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [] });
+    expect(document.querySelector("#autoTranslation")!.getAttribute("aria-pressed")).toBe("true");
     expect(changes.records).toEqual([]);
     changes.disconnect();
   });
@@ -300,6 +303,49 @@ describe("popup translation interactions", () => {
     expect(document.querySelector("#floatingBall")?.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("synchronizes languages, providers, display mode and automatic rules before saving another field", async () => {
+    stored = { ...stored, sourceLang: "ja", targetLang: "en", activeProviderId: "deepseek", translationDisplayMode: "bilingual-accent",
+      cacheEnabled: false, autoTranslation: { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] },
+      providers: stored.providers.map(entry => entry.id === "deepseek" ? { ...entry, label: "新的服务名称" } : entry.id === "microsoft-web-translate" ? { ...entry, enabled: false } : entry) };
+    settingsChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    expect(document.querySelector<HTMLSelectElement>("#sourceLang")!.value).toBe("ja");
+    expect(document.querySelector<HTMLSelectElement>("#targetLang")!.value).toBe("en");
+    expect(document.querySelector("#sourceLang + .language-value")!.textContent).toBe("日本語");
+    expect(document.querySelector(".wupage-provider-name")!.textContent).toBe("新的服务名称");
+    expect(document.querySelector("#provider option[value='microsoft-web-translate']")).toBeNull();
+    expect(document.querySelector<HTMLSelectElement>("#translationDisplayMode")!.value).toBe("bilingual-accent");
+    expect(document.querySelector("#autoTranslation")!.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector<HTMLButtonElement>("#addAutoTranslationSite")!.hidden).toBe(false);
+    const source = document.querySelector<HTMLSelectElement>("#sourceLang")!;
+    source.value = "fr"; source.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(stored.sourceLang).toBe("fr"));
+    expect(stored).toMatchObject({ targetLang: "en", activeProviderId: "deepseek", cacheEnabled: false, autoTranslation: { enabled: true } });
+  });
+
+  it("queues independent switches so one pending save cannot overwrite another", async () => {
+    const pending = deferred(); save.mockImplementationOnce(() => pending.promise);
+    document.querySelector<HTMLButtonElement>("#autoTranslation")!.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    document.querySelector<HTMLButtonElement>("#selectionTranslation")!.click();
+    pending.resolve(undefined);
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>("#selectionTranslation")!.disabled).toBe(false));
+    expect(stored.autoTranslation?.enabled).toBe(true);
+    expect(stored.selectionTranslation?.enabled).toBe(false);
+  });
+
+  it("keeps an external automatic setting received while a failed save is pending", async () => {
+    const pending = deferred(); save.mockImplementationOnce(() => pending.promise);
+    const automatic = document.querySelector<HTMLButtonElement>("#autoTranslation")!;
+    automatic.click(); await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    stored.autoTranslation = { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] };
+    settingsChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
+    pending.reject(new Error("本次保存失败"));
+    await vi.waitFor(() => expect(automatic.disabled).toBe(false));
+    expect(automatic.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector<HTMLButtonElement>("#addAutoTranslationSite")!.hidden).toBe(false);
+  });
+
   it("uses the latest saved site rules instead of replacing them with language detection", async () => {
     stored.autoTranslation = { enabled: false, nonTargetLanguage: false, presetSites: ["github.com"],
       customSites: [{ id: "private", pattern: "example.com/docs/*", enabled: true }] };
@@ -317,17 +363,17 @@ describe("popup translation interactions", () => {
     await vi.waitFor(() => expect(add.hidden || add.disabled).toBe(false));
     stored.autoTranslation = { enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [{ id: "other", pattern: "other.test", enabled: false }] };
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     expect(stored.autoTranslation).toMatchObject({ enabled: true, nonTargetLanguage: false, presetSites: ["github.com"], customSites: [
       { id: "other", pattern: "other.test", enabled: false }, { id: expect.any(String), pattern: "example.com", enabled: true }
     ] });
     await vi.waitFor(() => expect(add.disabled).toBe(false));
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("+"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("plus"));
     expect(stored.autoTranslation!.excludedSites).toEqual(["example.com"]);
     expect(stored.autoTranslation!.customSites).toHaveLength(2);
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     expect(stored.autoTranslation!.excludedSites).toBeUndefined();
     expect(stored.autoTranslation!.customSites).toHaveLength(2);
     automatic.click();
@@ -346,17 +392,17 @@ describe("popup translation interactions", () => {
     add.click(); automatic.click();
     expect(save).toHaveBeenCalledTimes(2);
     pending.resolve(undefined);
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     stored.autoTranslation!.customSites = [];
     settingsChanged({ [SETTINGS_KEY]: { newValue: stored } }, "local");
     save.mockRejectedValueOnce(new Error("网站保存失败"));
     add.click();
     await vi.waitFor(() => expect(document.querySelector("#status")?.textContent).toBe("网站保存失败"));
     expect(add.disabled).toBe(false);
-    expect(add.textContent).toBe("+");
+    expect(add.querySelector('svg')?.dataset.icon).toBe("plus");
     expect(stored.autoTranslation!.customSites).toEqual([]);
     add.click();
-    await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
   });
 
   it("rejects unsupported pages if the active tab changes before adding", async () => {
@@ -375,13 +421,13 @@ describe("popup translation interactions", () => {
     const add = document.querySelector<HTMLButtonElement>("#addAutoTranslationSite")!;
     document.querySelector<HTMLButtonElement>("#autoTranslation")!.click();
     await vi.waitFor(() => expect(add.hidden || add.disabled).toBe(false));
-    add.click(); await vi.waitFor(() => expect(add.textContent).toBe("✓"));
+    add.click(); await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("tick"));
     save.mockRejectedValueOnce(new Error("排除网站失败"));
     add.click();
     await vi.waitFor(() => expect(document.querySelector("#status")?.textContent).toBe("排除网站失败"));
-    expect(add.textContent).toBe("✓"); expect(add.disabled).toBe(false);
+    expect(add.querySelector('svg')?.dataset.icon).toBe("tick"); expect(add.disabled).toBe(false);
     expect(stored.autoTranslation!.excludedSites).toBeUndefined();
-    add.click(); await vi.waitFor(() => expect(add.textContent).toBe("+"));
+    add.click(); await vi.waitFor(() => expect(add.querySelector('svg')?.dataset.icon).toBe("plus"));
     expect(stored.autoTranslation!.excludedSites).toEqual(["example.com"]);
   });
 
@@ -419,8 +465,9 @@ function button(): HTMLButtonElement {
   return document.querySelector<HTMLButtonElement>("#pageToggle")!;
 }
 
-function deferred(): { promise: Promise<unknown>; resolve: (value: unknown) => void } {
+function deferred(): { promise: Promise<unknown>; resolve: (value: unknown) => void; reject: (error: Error) => void } {
   let resolve!: (value: unknown) => void;
-  const promise = new Promise(done => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (error: Error) => void;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }

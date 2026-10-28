@@ -1,4 +1,5 @@
 import { readFormulaText, renderFormulaText, type PdfFormulaImage } from "./math-rendering";
+import { uiIconMarkup, type UiIconName } from "../shared/ui-icons";
 
 export interface TranslationBlockGeometry {
   left: number;
@@ -56,20 +57,20 @@ export function createEditableTranslationBlock(
   else text.textContent = options.text;
   text.addEventListener("input", () => options.onTextChange?.(readFormulaText(text)));
 
-  const moveHandle = createControl("translation-block-move", "移动译文块", "✥");
+  const moveHandle = createControl("translation-block-move", "移动译文块", "cursor-move");
   bindPointerGesture(moveHandle, block, layer, "move");
 
-  const deleteButton = createControl("translation-block-delete", "删除译文块", "×");
+  const deleteButton = createControl("translation-block-delete", "删除译文块", "trash");
   deleteButton.addEventListener("click", () => {
     options.onDelete?.();
     block.remove();
   });
 
-  const resizeHandle = createControl("translation-block-resize", "调整译文块大小", "");
+  const resizeHandle = createControl("translation-block-resize", "调整译文块大小");
   bindPointerGesture(resizeHandle, block, layer, "resize");
 
-  const decreaseButton = createControl("translation-block-font-decrease", "减小字号", "−");
-  const increaseButton = createControl("translation-block-font-increase", "增大字号", "+");
+  const decreaseButton = createControl("translation-block-font-decrease", "减小字号", "minus");
+  const increaseButton = createControl("translation-block-font-increase", "增大字号", "plus");
   for (const [button, direction] of [[decreaseButton, -1], [increaseButton, 1]] as const) {
     button.addEventListener("click", () => {
       const size = numericStyle(text.style.fontSize);
@@ -168,13 +169,13 @@ function growTranslationBlock(block: HTMLElement, layer: HTMLElement, maximumHei
   block.style.height = `${Math.max(height, Math.min(text.scrollHeight, bottom - top))}px`;
 }
 
-function createControl(className: string, label: string, glyph: string): HTMLButtonElement {
+function createControl(className: string, label: string, icon?: UiIconName): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `translation-block-control ${className}`;
   button.setAttribute("aria-label", label);
   button.title = label;
-  button.textContent = glyph;
+  if (icon) button.innerHTML = uiIconMarkup(icon);
   return button;
 }
 

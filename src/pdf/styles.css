@@ -139,6 +139,11 @@ select:focus-visible,
   border-radius: 9px;
   color: #edf5f1;
   background: #263632;
+  appearance: none;
+  background-image: var(--wp-select-arrow);
+  background-position: right 10px center;
+  background-size: 10px 10px;
+  background-repeat: no-repeat;
 }
 
 .provider-select select {
@@ -333,28 +338,14 @@ button:disabled {
 }
 
 .pdf-glyph {
-  position: relative;
-  width: 86px;
-  height: 104px;
   display: grid;
-  place-items: end center;
+  justify-items: center;
+  gap: 12px;
   margin-bottom: 24px;
-  padding-bottom: 19px;
-  border-radius: 8px 20px 8px 8px;
-  color: #e9fff4;
-  background: #27473e;
-  box-shadow: 8px 12px 0 #cbe5d9;
+  color: var(--wp-accent, #27473e);
 }
 
-.pdf-glyph::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  border-width: 0 20px 20px 0;
-  border-style: solid;
-  border-color: transparent #edf0ec transparent transparent;
-}
+.pdf-glyph svg { width: 72px; height: 84px; }
 
 .pdf-glyph span {
   font-size: 15px;
@@ -875,3 +866,6 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+.language-arrow svg { width: 14px; height: 14px; }
+.translation-block-control svg { display: block; width: 1em; height: 1em; }

@@ -1,5 +1,6 @@
 import { ensureProviderIconStyles, providerIconMarkup } from "./provider-icons";
 import type { ProviderConfig } from "./types";
+import { uiIconMarkup } from "./ui-icons";
 
 const pickers = new WeakMap<HTMLSelectElement, () => void>();
 let openPicker: { root: HTMLElement; close: (focus?: boolean) => void } | undefined;
@@ -45,7 +46,7 @@ export function enhanceProviderSelect(select: HTMLSelectElement, providers: Prov
     label.className = "wupage-provider-name";
     label.textContent = selected?.textContent ?? "选择翻译服务";
     trigger.append(label);
-    trigger.insertAdjacentHTML("beforeend", '<span class="wupage-provider-arrow" aria-hidden="true"></span>');
+    trigger.insertAdjacentHTML("beforeend", `<span class="wupage-provider-arrow" aria-hidden="true">${uiIconMarkup("arrow-down-03")}</span>`);
     trigger.disabled = select.disabled;
     list.replaceChildren(...Array.from(select.options, (option) => {
       const button = document.createElement("button");
@@ -129,7 +130,9 @@ function ensurePickerStyles(): void {
     .wupage-provider-picker button:focus-visible { outline: 2px solid var(--wp-accent, #116466) !important; outline-offset: -2px !important; }
     .wupage-provider-picker button:disabled { opacity: .5 !important; cursor: default !important; }
     .wupage-provider-picker .wupage-provider-name { all: initial !important; display: block !important; position: static !important; min-width: 0 !important; flex: 1 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; color: inherit !important; font: inherit !important; }
-    .wupage-provider-picker .wupage-provider-arrow { all: initial !important; position: static !important; flex: 0 0 6px !important; width: 6px !important; height: 6px !important; margin: -3px 2px 0 8px !important; border-right: 2px solid var(--wp-muted, #627077) !important; border-bottom: 2px solid var(--wp-muted, #627077) !important; transform: rotate(45deg) !important; }
+    .wupage-provider-picker .wupage-provider-arrow { all: initial !important; display: flex !important; position: static !important; flex: 0 0 10px !important; width: 10px !important; height: 10px !important; margin: 0 2px 0 8px !important; color: var(--wp-muted, #627077) !important; }
+    .wupage-provider-arrow svg { width: 10px !important; height: 10px !important; }
+    .wupage-provider-trigger[aria-expanded="true"] .wupage-provider-arrow { transform: rotate(180deg) !important; }
     .wupage-provider-list { all: initial !important; box-sizing: border-box !important; position: fixed !important; inset: auto; display: block !important; z-index: 2147483647 !important; overflow-y: auto !important; overscroll-behavior: contain !important; padding: 4px !important; margin: 0 !important; border: 1px solid var(--wp-border, #c9d1cf) !important; border-radius: 8px !important; background: var(--wp-surface, #fff) !important; box-shadow: 0 8px 24px #18282c29 !important; }
     .wupage-provider-list[hidden] { display: none !important; }
     .wupage-provider-picker select[hidden] { display: none !important; }

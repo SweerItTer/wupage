@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupShortcutSettings } from "../src/options/shortcuts";
-import { DEFAULT_SHORTCUTS, DEFAULT_SHORTCUT_ENABLED, type TranslationShortcut } from "../src/shared/shortcuts";
+import { DEFAULT_SHORTCUTS, DEFAULT_SHORTCUT_ENABLED, TRANSLATION_SHORTCUTS, type TranslationShortcut } from "../src/shared/shortcuts";
 
 let root: HTMLElement;
 let controls: ReturnType<typeof setupShortcutSettings>;
@@ -40,12 +40,33 @@ describe("in-page shortcut editor", () => {
     root.querySelector<HTMLButtonElement>("#resetShortcuts")!.click();
     expect(controls.readEnabled()).toEqual(DEFAULT_SHORTCUT_ENABLED);
   });
-  it("turns cleared bindings off and can enable them with the default key", () => {
-    mount(); binding().focus(); press("Delete");
-    const toggle = root.querySelector<HTMLButtonElement>("[data-shortcut-toggle='toggle-page-translation']")!;
+  it.each(TRANSLATION_SHORTCUTS)("keeps an empty $name disabled until a binding is explicitly assigned", ({ name }) => {
+    mount(); binding(name).focus(); press("Delete");
+    const toggle = root.querySelector<HTMLButtonElement>(`[data-shortcut-toggle='${name}']`)!;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.title).toContain("请先设置快捷键");
+    toggle.click(); toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(controls.read()[name]).toBe("");
+    expect(controls.readEnabled()[name]).toBe(false);
+    binding(name).focus(); press("j", "KeyJ", altShift);
+    expect(toggle.disabled).toBe(false);
+    expect(controls.read()[name]).toBe("Alt+Shift+J");
+    toggle.click(); expect(toggle.getAttribute("aria-checked")).toBe("false");
     toggle.click(); expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(binding().value).toBe("Alt＋Shift＋Y");
+  });
+  it("does not restore or validate a conflicting default when an empty switch is clicked", () => {
+    mount({ ...DEFAULT_SHORTCUTS, "translate-selection": "Alt+Shift+L", "toggle-paragraph-mode": "" });
+    const toggle = root.querySelector<HTMLButtonElement>("[data-shortcut-toggle='toggle-paragraph-mode']")!;
+    expect(toggle.disabled).toBe(true);
+    toggle.click();
+    expect(controls.read()["toggle-paragraph-mode"]).toBe("");
+    expect(binding("toggle-paragraph-mode").hasAttribute("aria-invalid")).toBe(false);
+    expect(root.querySelector("#shortcut-error-toggle-paragraph-mode")?.textContent).toBe("");
+    controls.render(controls.read(), { ...DEFAULT_SHORTCUT_ENABLED, "toggle-paragraph-mode": true });
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
   it("loads saved values, supports explicit empty bindings and waits for settings before editing", () => {
     controls = setupShortcutSettings(root);
@@ -80,6 +101,7 @@ describe("in-page shortcut editor", () => {
     expect(controls.read()["toggle-page-translation"]).toBe("");
     root.querySelector<HTMLButtonElement>('[aria-label="恢复翻译全文 / 恢复原文默认快捷键"]')!.click();
     expect(binding().value).toBe("Alt＋Shift＋Y");
+    expect(root.querySelector<HTMLButtonElement>("[data-shortcut-toggle='toggle-page-translation']")!.disabled).toBe(false);
     binding().focus(); press("Delete");
     expect(binding().value).toBe("");
   });

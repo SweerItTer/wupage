@@ -1,3 +1,4 @@
+import { uiIconMarkup } from "../shared/ui-icons";
 import type {
   ExtensionSettings,
   RuntimeRequest,
@@ -26,6 +27,7 @@ import { SETTINGS_KEY } from "../shared/defaults";
 import { TRANSLATION_DISPLAY_MODES } from "../shared/display-modes";
 import { translateParagraph } from "./paragraph-translation";
 import { normalizeShortcutEnabled } from "../shared/shortcuts";
+import { createSettingsSnapshot } from "../shared/settings-snapshot";
 
 const FLOATING_ID = "wupage-floating-ball";
 const FLOATING_HITBOX_ID = "wupage-floating-hitbox";
@@ -81,7 +83,7 @@ let unsubscribeTranslationState: (() => void) | undefined;
 let paragraphMode = false;
 let floatingBallEnabled = true;
 let shortcutEnabled = normalizeShortcutEnabled(undefined);
-let shortcutSettingsRevision = 0;
+let settingsSnapshot = createSettingsSnapshot(readSettings);
 let debugRefreshTimer: number | undefined;
 let debugDragging = false;
 let debugDragOffsetX = 0;
@@ -102,6 +104,7 @@ export function initFloatingBall(): void {
   dragging = movedDuringDrag = longPressTriggered = touchInteraction = false;
   menuError = null;
   settingsSave = Promise.resolve();
+  settingsSnapshot = createSettingsSnapshot(readSettings);
   menuOcr?.dispose();
   menuOcr = undefined;
 
@@ -202,7 +205,7 @@ function subscribeToPositionChanges(button: HTMLElement): void {
     if (areaName !== "local") return;
     const settings = changes[SETTINGS_KEY]?.newValue as ExtensionSettings | undefined;
     if (settings) {
-      shortcutSettingsRevision++;
+      settingsSnapshot.receive(settings);
       shortcutEnabled = normalizeShortcutEnabled(settings.shortcutEnabled, settings.shortcuts);
       if (!shortcutEnabled["paragraph-click"]) setActiveParagraph(null);
       floatingBallEnabled = settings.floatingBallEnabled;
@@ -341,7 +344,7 @@ function createMenu(): void {
     <div class="wupage-menu-header">
       <strong>WuPage</strong>
       <button type="button" data-action="settings" aria-label="打开设置" title="打开设置">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.5.9-2.2-.6-2.5 4.3 1.6 1.6v1.8l-1.6 1.6 2.5 4.3 2.2-.6 1.5.9.6 2.2h5l.6-2.2 1.5-.9 2.2.6 2.5-4.3-1.6-1.6v-1.8l1.6-1.6-2.5-4.3-2.2.6-1.5-.9-.6-2.2Z"/><circle cx="12" cy="12" r="3"/></svg>
+        ${uiIconMarkup("settings")}
       </button>
     </div>
     <div class="wupage-menu-section">
@@ -354,9 +357,9 @@ function createMenu(): void {
             ).join("")}
           </select>
           <span class="wupage-language-value" data-role="source-lang-value" aria-hidden="true">自动检测</span>
-          <span class="wupage-language-chevron" aria-hidden="true"></span>
+          <span class="wupage-language-chevron" aria-hidden="true">${uiIconMarkup("arrow-down-03")}</span>
         </label>
-        <span class="wupage-language-direction" aria-hidden="true">→</span>
+        <span class="wupage-language-direction" aria-hidden="true">${uiIconMarkup("arrow-right")}</span>
         <label class="wupage-language-select">
           <span class="wupage-visually-hidden">目标语言</span>
           <select data-role="target-lang">
@@ -365,11 +368,11 @@ function createMenu(): void {
             ).join("")}
           </select>
           <span class="wupage-language-value" data-role="target-lang-value" aria-hidden="true">中文</span>
-          <span class="wupage-language-chevron" aria-hidden="true"></span>
+          <span class="wupage-language-chevron" aria-hidden="true">${uiIconMarkup("arrow-down-03")}</span>
         </label>
         <div class="wupage-language-automatic">
           <button type="button" data-action="auto-translation" class="wupage-feature-button wupage-language-auto" aria-label="自动翻译" aria-pressed="false" title="按站点或页面语言规则自动翻译">自动</button>
-          <button type="button" data-action="add-auto-site" class="wupage-language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表">+</button>
+          <button type="button" data-action="add-auto-site" class="wupage-language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表">${uiIconMarkup("plus")}</button>
         </div>
       </div>
     </div>
@@ -954,7 +957,7 @@ export async function openDebugPanel(): Promise<void> {
   panel.innerHTML = `
     <header>
       <strong>Debug</strong>
-      <button type="button" data-action="close-debug" title="关闭">×</button>
+      <button type="button" data-action="close-debug" title="关闭" aria-label="关闭 Debug 面板">${uiIconMarkup("cross")}</button>
     </header>
     <div class="wupage-debug-summary">正在读取任务...</div>
     <div class="wupage-debug-list"></div>
@@ -1231,9 +1234,8 @@ export async function setParagraphMode(enabled: boolean): Promise<void> {
 }
 
 async function syncFloatingBallFromSettings(): Promise<void> {
-  const revision = shortcutSettingsRevision;
   const settings = await getSettings();
-  if (revision === shortcutSettingsRevision) shortcutEnabled = normalizeShortcutEnabled(settings.shortcutEnabled, settings.shortcuts);
+  shortcutEnabled = normalizeShortcutEnabled(settings.shortcutEnabled, settings.shortcuts);
   floatingBallEnabled = settings.floatingBallEnabled;
   const menu = document.getElementById("wupage-floating-menu");
   if (menu) applyMenuSettings(menu, settings);
@@ -1270,7 +1272,7 @@ async function toggleAutoTranslation(menu: HTMLElement): Promise<void> {
     await updateFloatingSettings(menu, { autoTranslation: setAutoTranslationEnabled(rules, !rules.enabled) });
   } finally {
     button.disabled = false; button.setAttribute("aria-busy", "false");
-    await getSettings().then(settings => updateAutoTranslationSiteButton(menu, settings.autoTranslation)).catch(() => {});
+    await getSettings().then(settings => applyMenuSettings(menu, settings)).catch(() => {});
   }
 }
 
@@ -1281,7 +1283,7 @@ function updateAutoTranslationSiteButton(menu: HTMLElement, value: ExtensionSett
   const added = hasAutoTranslationWebsite(value, window.location.href);
   add.hidden = !normalizeAutoTranslation(value).enabled;
   add.disabled = !pattern || automatic.getAttribute("aria-busy") === "true" || add.getAttribute("aria-busy") === "true";
-  add.textContent = added ? "✓" : "+";
+  add.innerHTML = uiIconMarkup(added ? "tick" : "plus");
   add.setAttribute("aria-pressed", String(added));
   const label = !pattern ? "请切换到普通网页后再添加网站" : added ? `将 ${pattern} 排除自动翻译` : `将 ${pattern} 加入自动翻译列表`;
   add.title = label;
@@ -1364,12 +1366,12 @@ function updateFloatingSettings(menu: HTMLElement, change: Partial<ExtensionSett
     try {
       await sendRuntimeRequest({ type: "SAVE_SETTINGS", settings } satisfies RuntimeRequest);
     } catch (error) {
-      applyMenuSettings(menu, previous);
+      applyMenuSettings(menu, settingsSnapshot.current() ?? previous);
       throw error;
     }
     if (patch.translationDisplayMode) setPageTranslationDisplayMode(patch.translationDisplayMode);
     menuError = null;
-    applyMenuSettings(menu, settings);
+    applyMenuSettings(menu, await getSettings());
     refreshTranslationState();
   });
   settingsSave = save;
@@ -1390,6 +1392,10 @@ async function saveLocal(items: Record<string, unknown>): Promise<void> {
 }
 
 async function getSettings(): Promise<ExtensionSettings> {
+  return settingsSnapshot.read();
+}
+
+async function readSettings(): Promise<ExtensionSettings> {
   return sendRuntimeRequest<ExtensionSettings>({
     type: "GET_SETTINGS"
   } satisfies RuntimeRequest);

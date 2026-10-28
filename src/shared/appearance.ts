@@ -1,3 +1,5 @@
+import { uiIconUrl } from "./ui-icons";
+
 export type AppearanceMode = "system" | "light" | "dark";
 export type AppearanceTone = "light" | "dark";
 interface InterfaceColors {
@@ -142,6 +144,9 @@ export function applyColorScheme(target: HTMLElement, scheme: ColorScheme): void
   for (const { key } of COLOR_FIELDS) target.style.setProperty(`--wp-${key}`, scheme.colors[key]);
   target.style.setProperty("--wp-on-accent", accentForeground(scheme.colors.accent));
   target.style.setProperty("--wp-color-scheme", scheme.tone);
+  target.style.setProperty("--wp-select-arrow", uiIconUrl("arrow-down-03", scheme.colors.muted));
+  target.style.setProperty("--wp-selection-select-arrow", uiIconUrl("arrow-down-03", scheme.colors["selection-foreground"]));
+  target.style.setProperty("--wp-disclosure-icon", uiIconUrl("arrow-down-03"));
   target.style.setProperty("--wp-soft", "color-mix(in srgb, var(--wp-accent) 6%, var(--wp-surface))");
   target.style.setProperty("--wp-selected", "color-mix(in srgb, var(--wp-accent) 12%, var(--wp-surface))");
   target.style.setProperty("--wp-accent-hover", "color-mix(in srgb, var(--wp-accent) 85%, var(--wp-foreground))");

@@ -1,5 +1,6 @@
 import { AUTO_TRANSLATION_PRESETS, normalizeAutoTranslation, normalizeSitePattern, setAutoTranslationEnabled } from "../shared/auto-translation";
 import type { AutoTranslationSettings, AutoTranslationSite } from "../shared/types";
+import { uiIconMarkup } from "../shared/ui-icons";
 
 export function setupAutoTranslationControls(
   root: HTMLElement,
@@ -29,7 +30,7 @@ export function setupAutoTranslationControls(
     for (const site of excludedSites) {
       const row = document.createElement("li");
       const label = document.createElement("span"); label.textContent = site; label.title = site;
-      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×";
+      const remove = document.createElement("button"); remove.type = "button"; remove.innerHTML = uiIconMarkup("cross");
       remove.title = `取消排除 ${site}`; remove.setAttribute("aria-label", remove.title);
       remove.addEventListener("click", () => {
         excludedSites = excludedSites.filter(value => value !== site);
@@ -86,7 +87,7 @@ export function setupAutoTranslationControls(
       });
       controls.set(site.id, pattern);
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary auto-site-remove";
-      remove.textContent = "−"; remove.title = "删除站点"; remove.setAttribute("aria-label", `删除站点 ${site.pattern || "未填写"}`);
+      remove.innerHTML = uiIconMarkup("trash"); remove.title = "删除站点"; remove.setAttribute("aria-label", `删除站点 ${site.pattern || "未填写"}`);
       remove.addEventListener("click", () => {
         syncDrafts();
         const index = sites.indexOf(site);
@@ -97,7 +98,7 @@ export function setupAutoTranslationControls(
       editor.append(caption, pattern); row.append(checkbox, editor, remove); list.append(row);
     });
     const addRow = document.createElement("li"); addRow.className = "auto-site-add-row";
-    const add = document.createElement("button"); add.id = "addAutoTranslateSite"; add.type = "button"; add.textContent = "+";
+    const add = document.createElement("button"); add.id = "addAutoTranslateSite"; add.type = "button"; add.innerHTML = uiIconMarkup("plus");
     add.title = "添加站点"; add.setAttribute("aria-label", "添加站点");
     add.addEventListener("click", () => {
       syncDrafts();

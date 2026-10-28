@@ -2,9 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, SETTINGS_KEY } from "../src/shared/defaults";
 import type { ExtensionSettings, RuntimeRequest, RuntimeResponse } from "../src/shared/types";
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.resetModules(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.resetModules(); vi.doUnmock("../src/ocr/model-store"); });
 
 describe("background startup compatibility", () => {
+  it.each(["installed", undefined])("keeps changes saved during an OCR model check (%s)", async (modelRevision) => {
+    let finish!: (revision: string | undefined) => void;
+    const check = vi.fn(() => new Promise<string | undefined>(resolve => { finish = resolve; }));
+    vi.doMock("../src/ocr/model-store", async () => ({ ...await vi.importActual("../src/ocr/model-store"), installedRevision: check }));
+    const stored: Record<string, unknown> = { [SETTINGS_KEY]: { ...structuredClone(DEFAULT_SETTINGS), imageTranslationEnabled: true } };
+    const addListener = vi.fn();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("chrome", { runtime: { onMessage: { addListener } }, storage: { local: {
+      get: async () => structuredClone(stored),
+      set: async (value: Record<string, unknown>) => { Object.assign(stored, structuredClone(value)); }
+    } } });
+    await import("../src/background/index");
+    const response = new Promise<RuntimeResponse>(resolve => addListener.mock.calls[0][0]({ type: "GET_SETTINGS" }, {}, resolve));
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
+    stored[SETTINGS_KEY] = { ...stored[SETTINGS_KEY] as ExtensionSettings, targetLang: "ja",
+      autoTranslation: { enabled: true, nonTargetLanguage: true, presetSites: [], customSites: [] } };
+    finish(modelRevision);
+    expect(await response).toMatchObject({ ok: true, data: { targetLang: "ja", autoTranslation: { enabled: true }, imageTranslationEnabled: Boolean(modelRevision) } });
+    expect(stored[SETTINGS_KEY]).toMatchObject({ targetLang: "ja", autoTranslation: { enabled: true }, imageTranslationEnabled: Boolean(modelRevision) });
+  });
+
   it("allows explicitly testing a disabled service while rejecting ordinary translation requests to it", async () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
     Object.assign(settings.providers.find(provider => provider.id === "openai-compatible")!, {

@@ -12,6 +12,10 @@ import { enhanceProviderSelect } from "../shared/provider-picker";
 import { addAutoTranslationWebsite, currentWebsitePattern, excludeAutoTranslationWebsite, hasAutoTranslationWebsite, normalizeAutoTranslation, setAutoTranslationEnabled } from "../shared/auto-translation";
 import { normalizeSelectionTranslation } from "../shared/dictionary";
 import { SETTINGS_KEY } from "../shared/defaults";
+import { renderUiIcons, uiIconMarkup } from "../shared/ui-icons";
+import { createSettingsSnapshot } from "../shared/settings-snapshot";
+
+renderUiIcons();
 
 const targetLang = query<HTMLSelectElement>("#targetLang");
 const sourceLang = query<HTMLSelectElement>("#sourceLang");
@@ -49,6 +53,9 @@ let floatingBallEnabled = true;
 let activeTabIsPdf = false;
 let activePageURL: string | undefined;
 let pageTranslationAvailable = true;
+let settingsReady = false;
+let settingsSave: Promise<unknown> = Promise.resolve();
+const settingsSnapshot = createSettingsSnapshot(() => sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" }));
 
 void init().catch((error: unknown) => {
   pageTranslationAvailable = false;
@@ -58,6 +65,8 @@ void init().catch((error: unknown) => {
 });
 
 async function init(): Promise<void> {
+  chrome.storage?.onChanged?.addListener(settingsChanged);
+  window.addEventListener("pagehide", () => chrome.storage?.onChanged?.removeListener?.(settingsChanged), { once: true });
   openFileAccessSettingsButton.addEventListener("click", () => {
     void chrome.tabs.create({ url: getExtensionDetailsUrl(chrome.runtime.id, navigator.userAgent) })
       .then(() => window.close()).catch((error: unknown) => {
@@ -73,7 +82,7 @@ async function init(): Promise<void> {
       setStatus(error instanceof Error ? error.message : String(error));
     });
   });
-  settings = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
+  settings = await settingsSnapshot.read();
   setupAppearance(settings.appearance);
   renderLanguageOptions(sourceLang, settings.sourceLang, SOURCE_LANGUAGES);
   renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
@@ -106,6 +115,8 @@ async function init(): Promise<void> {
   updateFloatingBallButton();
   setImageTranslationToggle(imageTranslationButton, settings.imageTranslationEnabled === true);
   setupOcrControl(imageTranslationButton, () => { settings.imageTranslationEnabled = false; setImageTranslationToggle(imageTranslationButton, false); });
+  settingsReady = true;
+  applyPopupSettings(settingsSnapshot.current() ?? settings);
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   activePageURL = activeTab?.url;
   updateAutoTranslationSiteButton();
@@ -131,9 +142,10 @@ async function init(): Promise<void> {
   }
   updatePageActionAvailability();
 
-  targetLang.addEventListener("change", savePopupSettings);
-  sourceLang.addEventListener("change", savePopupSettings);
-  provider.addEventListener("change", savePopupSettings);
+  const saveSelection = () => { void savePopupSettings().catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error))); };
+  targetLang.addEventListener("change", saveSelection);
+  sourceLang.addEventListener("change", saveSelection);
+  provider.addEventListener("change", saveSelection);
   pageToggleButton.addEventListener("click", togglePageTranslation);
   translationModeSelect.addEventListener("change", toggleParagraphMode);
   contextMenuTranslationButton.addEventListener("click", toggleContextMenuTranslation);
@@ -146,12 +158,9 @@ async function init(): Promise<void> {
     setButtonBusy(imageTranslationButton, true);
     const previous = settings.imageTranslationEnabled === true;
     try {
-      settings.imageTranslationEnabled = !previous;
-      await savePopupSettings();
-      setImageTranslationToggle(imageTranslationButton, !previous);
+      await updatePopupSettings({ imageTranslationEnabled: !previous });
       setStatus(!previous ? "图片翻译已开启，点击图片旁的“译”按钮即可覆盖翻译。" : "图片翻译已关闭，已恢复原图。");
     } catch (error) {
-      settings.imageTranslationEnabled = previous;
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
       setButtonBusy(imageTranslationButton, false);
@@ -166,32 +175,6 @@ async function init(): Promise<void> {
   websiteButton.addEventListener("click", () => {
     void chrome.tabs.create({ url: WEBSITE_URL });
   });
-  const settingsChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
-    const incoming = changes[SETTINGS_KEY]?.newValue as ExtensionSettings | undefined;
-    if (area !== "local" || !incoming) return;
-    settings.appearance = incoming.appearance;
-    if (contextMenuTranslationButton.getAttribute("aria-busy") !== "true") {
-      settings.contextMenuTranslationEnabled = incoming.contextMenuTranslationEnabled === true;
-      updateContextMenuTranslationButton();
-    }
-    if (autoTranslationButton.getAttribute("aria-busy") !== "true") {
-      settings.autoTranslation = normalizeAutoTranslation(incoming.autoTranslation);
-      updateAutoTranslationButton();
-    }
-    if (selectionTranslationButton.getAttribute("aria-busy") !== "true") {
-      settings.selectionTranslation = normalizeSelectionTranslation(incoming.selectionTranslation);
-      updateSelectionTranslationButton();
-    }
-    if (floatingBallButton.getAttribute("aria-busy") !== "true") {
-      floatingBallEnabled = settings.floatingBallEnabled = incoming.floatingBallEnabled;
-      updateFloatingBallButton();
-    }
-    if (imageTranslationButton.getAttribute("aria-busy") !== "true") {
-      settings.imageTranslationEnabled = incoming.imageTranslationEnabled === true;
-      setImageTranslationToggle(imageTranslationButton, settings.imageTranslationEnabled);
-    }
-  };
-  chrome.storage?.onChanged?.addListener(settingsChanged);
   let syncing = false;
   const timer = !activeTabIsPdf && pageTranslationAvailable && activeTab?.id
     ? window.setInterval(() => {
@@ -205,23 +188,72 @@ async function init(): Promise<void> {
     }, 500) : undefined;
   window.addEventListener("pagehide", () => {
     if (timer !== undefined) clearInterval(timer);
-    chrome.storage?.onChanged?.removeListener?.(settingsChanged);
   }, { once: true });
 }
 
 async function savePopupSettings(): Promise<void> {
   syncLanguageValue(sourceLang);
   syncLanguageValue(targetLang);
-  settings = {
-    ...settings,
-    sourceLang: sourceLang.value || "auto",
-    targetLang: targetLang.value || "zh-CN",
-    activeProviderId: provider.value,
-    translationDisplayMode: translationDisplayMode.value === "paragraph" ? settings.translationDisplayMode
-      : translationDisplayMode.value as ExtensionSettings["translationDisplayMode"]
-  };
-  await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+  const patch: Partial<ExtensionSettings> = {};
+  if (sourceLang.value !== settings.sourceLang) patch.sourceLang = sourceLang.value || "auto";
+  if (targetLang.value !== settings.targetLang) patch.targetLang = targetLang.value || "zh-CN";
+  if (provider.value !== settings.activeProviderId) patch.activeProviderId = provider.value;
+  if (translationDisplayMode.value !== "paragraph" && translationDisplayMode.value !== settings.translationDisplayMode) {
+    patch.translationDisplayMode = translationDisplayMode.value as ExtensionSettings["translationDisplayMode"];
+  }
+  await updatePopupSettings(patch);
+}
+
+function settingsChanged(changes: Record<string, chrome.storage.StorageChange>, area: string): void {
+  const incoming = changes[SETTINGS_KEY]?.newValue as ExtensionSettings | undefined;
+  if (area !== "local" || !incoming) return;
+  settingsSnapshot.receive(incoming);
+  if (settingsReady) applyPopupSettings(incoming);
+}
+
+function applyPopupSettings(incoming: ExtensionSettings): void {
+  settings = incoming;
+  if (sourceLang.value !== settings.sourceLang) renderLanguageOptions(sourceLang, settings.sourceLang, SOURCE_LANGUAGES);
+  if (targetLang.value !== settings.targetLang) renderLanguageOptions(targetLang, settings.targetLang, TARGET_LANGUAGES);
+  const providers = settings.providers.filter(entry => entry.enabled !== false);
+  const signature = JSON.stringify(providers.map(({ id, label, type }) => [id, label, type]));
+  if (provider.dataset.options !== signature || provider.value !== settings.activeProviderId) {
+    provider.replaceChildren(...providers.map(entry => new Option(entry.label, entry.id)));
+    if (!providers.some(entry => entry.id === settings.activeProviderId)) {
+      const unavailable = new Option("当前服务不可用，请选择其他服务", settings.activeProviderId);
+      unavailable.disabled = true;
+      provider.prepend(unavailable);
+    }
+    provider.dataset.options = signature;
+    provider.value = settings.activeProviderId;
+    enhanceProviderSelect(provider, settings.providers);
+  }
+  if (translationModeSelect.getAttribute("aria-busy") !== "true") updateParagraphModeButton();
+  if (contextMenuTranslationButton.getAttribute("aria-busy") !== "true") updateContextMenuTranslationButton();
+  if (autoTranslationButton.getAttribute("aria-busy") !== "true") updateAutoTranslationButton();
+  if (selectionTranslationButton.getAttribute("aria-busy") !== "true") updateSelectionTranslationButton();
+  if (floatingBallButton.getAttribute("aria-busy") !== "true") {
+    floatingBallEnabled = settings.floatingBallEnabled;
+    updateFloatingBallButton();
+  }
+  if (imageTranslationButton.getAttribute("aria-busy") !== "true") setImageTranslationToggle(imageTranslationButton, settings.imageTranslationEnabled === true);
   updateLocalNotice();
+}
+
+function updatePopupSettings(change: Partial<ExtensionSettings> | ((previous: ExtensionSettings) => Partial<ExtensionSettings>)): Promise<void> {
+  const save = settingsSave.catch(() => undefined).then(async () => {
+    const previous = await settingsSnapshot.read();
+    const patch = typeof change === "function" ? change(previous) : change;
+    try {
+      await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings: { ...previous, ...patch } });
+      applyPopupSettings(await settingsSnapshot.read());
+    } catch (error) {
+      applyPopupSettings(settingsSnapshot.current() ?? previous);
+      throw error;
+    }
+  });
+  settingsSave = save;
+  return save;
 }
 
 function updateLocalNotice(): void {
@@ -323,6 +355,7 @@ async function togglePageTranslation(): Promise<void> {
 function setButtonBusy(button: HTMLButtonElement | HTMLSelectElement, value: boolean): void {
   button.disabled = value;
   button.setAttribute("aria-busy", String(value));
+  if (!value && settingsReady) applyPopupSettings(settingsSnapshot.current() ?? settings);
 }
 
 async function openPdfTranslator(): Promise<void> {
@@ -410,14 +443,10 @@ async function toggleAutoTranslation(): Promise<void> {
   if (autoTranslationNotice && status.textContent === autoTranslationNotice) setStatus("");
   autoTranslationNotice = undefined;
   const enabled = autoTranslationButton.getAttribute("aria-pressed") !== "true";
-  let previous = normalizeAutoTranslation(settings.autoTranslation);
   setButtonBusy(autoTranslationButton, true);
   updateAutoTranslationSiteButton();
   try {
-    const latest = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
-    previous = normalizeAutoTranslation(latest.autoTranslation);
-    settings = { ...latest, autoTranslation: setAutoTranslationEnabled(previous, enabled) };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await updatePopupSettings(latest => ({ autoTranslation: setAutoTranslationEnabled(normalizeAutoTranslation(latest.autoTranslation), enabled) }));
     updateAutoTranslationButton();
     const rules = settings.autoTranslation!;
     if (enabled && !rules.nonTargetLanguage && !rules.presetSites.length && !rules.customSites.some(site => site.enabled)) {
@@ -425,7 +454,6 @@ async function toggleAutoTranslation(): Promise<void> {
       setStatus(autoTranslationNotice);
     }
   } catch (error) {
-    settings = { ...settings, autoTranslation: previous };
     updateAutoTranslationButton();
     autoTranslationNotice = error instanceof Error ? error.message : String(error);
     setStatus(autoTranslationNotice);
@@ -437,8 +465,9 @@ async function toggleAutoTranslation(): Promise<void> {
 
 function updateAutoTranslationButton(): void {
   const rules = normalizeAutoTranslation(settings.autoTranslation);
-  autoTranslationButton.setAttribute("aria-pressed", String(rules.enabled));
-  autoTranslationButton.title = rules.nonTargetLanguage ? "自动翻译非目标语言页面；可在设置中限定站点" : "按已配置的站点规则自动翻译";
+  if (autoTranslationButton.getAttribute("aria-pressed") !== String(rules.enabled)) autoTranslationButton.setAttribute("aria-pressed", String(rules.enabled));
+  const title = rules.nonTargetLanguage ? "自动翻译非目标语言页面；可在设置中限定站点" : "按已配置的站点规则自动翻译";
+  if (autoTranslationButton.title !== title) autoTranslationButton.title = title;
   if (autoTranslationButton.hasAttribute("data-loading")) {
     void autoTranslationButton.offsetWidth;
     autoTranslationButton.removeAttribute("data-loading");
@@ -451,14 +480,16 @@ function updateAutoTranslationSiteButton(): void {
   const enabled = normalizeAutoTranslation(settings.autoTranslation).enabled;
   const pattern = currentWebsitePattern(activePageURL);
   const added = hasAutoTranslationWebsite(settings.autoTranslation, activePageURL);
-  addAutoTranslationSiteButton.hidden = !enabled;
-  addAutoTranslationSiteButton.disabled = !pattern || autoTranslationButton.getAttribute("aria-busy") === "true"
+  if (addAutoTranslationSiteButton.hidden !== !enabled) addAutoTranslationSiteButton.hidden = !enabled;
+  const disabled = !pattern || autoTranslationButton.getAttribute("aria-busy") === "true"
     || addAutoTranslationSiteButton.getAttribute("aria-busy") === "true";
-  addAutoTranslationSiteButton.textContent = added ? "✓" : "+";
-  addAutoTranslationSiteButton.setAttribute("aria-pressed", String(added));
+  if (addAutoTranslationSiteButton.disabled !== disabled) addAutoTranslationSiteButton.disabled = disabled;
+  const icon = added ? "tick" : "plus";
+  if (addAutoTranslationSiteButton.querySelector("svg")?.dataset.icon !== icon) addAutoTranslationSiteButton.innerHTML = uiIconMarkup(icon);
+  if (addAutoTranslationSiteButton.getAttribute("aria-pressed") !== String(added)) addAutoTranslationSiteButton.setAttribute("aria-pressed", String(added));
   const label = !pattern ? "请切换到普通网页后再添加网站" : added ? `将 ${pattern} 排除自动翻译` : `将 ${pattern} 加入自动翻译列表`;
-  addAutoTranslationSiteButton.title = label;
-  addAutoTranslationSiteButton.setAttribute("aria-label", label);
+  if (addAutoTranslationSiteButton.title !== label) addAutoTranslationSiteButton.title = label;
+  if (addAutoTranslationSiteButton.getAttribute("aria-label") !== label) addAutoTranslationSiteButton.setAttribute("aria-label", label);
 }
 
 async function toggleCurrentAutoTranslationSite(): Promise<void> {
@@ -466,19 +497,14 @@ async function toggleCurrentAutoTranslationSite(): Promise<void> {
   const include = addAutoTranslationSiteButton.getAttribute("aria-pressed") !== "true";
   if (autoTranslationNotice && status.textContent === autoTranslationNotice) setStatus("");
   autoTranslationNotice = undefined;
-  let previous = normalizeAutoTranslation(settings.autoTranslation);
   setButtonBusy(addAutoTranslationSiteButton, true);
   setButtonBusy(autoTranslationButton, true);
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     activePageURL = tab?.url;
-    const latest = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
-    previous = normalizeAutoTranslation(latest.autoTranslation);
-    settings = { ...latest, autoTranslation: include ? addAutoTranslationWebsite(previous, activePageURL) : excludeAutoTranslationWebsite(previous, activePageURL) };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await updatePopupSettings(latest => ({ autoTranslation: include ? addAutoTranslationWebsite(latest.autoTranslation, activePageURL) : excludeAutoTranslationWebsite(latest.autoTranslation, activePageURL) }));
     autoTranslationNotice = include ? `已将 ${currentWebsitePattern(activePageURL)} 加入自动翻译列表。` : `已将 ${currentWebsitePattern(activePageURL)} 排除自动翻译。`;
   } catch (error) {
-    settings = { ...settings, autoTranslation: previous };
     autoTranslationNotice = error instanceof Error ? error.message : String(error);
   } finally {
     setButtonBusy(autoTranslationButton, false);
@@ -490,15 +516,10 @@ async function toggleCurrentAutoTranslationSite(): Promise<void> {
 
 async function toggleSelectionTranslation(): Promise<void> {
   const enabled = selectionTranslationButton.getAttribute("aria-pressed") !== "true";
-  let previous = normalizeSelectionTranslation(settings.selectionTranslation);
   setButtonBusy(selectionTranslationButton, true);
   try {
-    const latest = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
-    previous = normalizeSelectionTranslation(latest.selectionTranslation);
-    settings = { ...latest, selectionTranslation: { ...previous, enabled } };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await updatePopupSettings(latest => ({ selectionTranslation: { ...normalizeSelectionTranslation(latest.selectionTranslation), enabled } }));
   } catch (error) {
-    settings = { ...settings, selectionTranslation: previous };
     setStatus(error instanceof Error ? error.message : String(error));
   } finally {
     updateSelectionTranslationButton();
@@ -507,7 +528,8 @@ async function toggleSelectionTranslation(): Promise<void> {
 }
 
 function updateSelectionTranslationButton(): void {
-  selectionTranslationButton.setAttribute("aria-pressed", String(normalizeSelectionTranslation(settings.selectionTranslation).enabled));
+  const value = String(normalizeSelectionTranslation(settings.selectionTranslation).enabled);
+  if (selectionTranslationButton.getAttribute("aria-pressed") !== value) selectionTranslationButton.setAttribute("aria-pressed", value);
 }
 
 async function toggleParagraphMode(): Promise<void> {
@@ -547,11 +569,8 @@ async function toggleContextMenuTranslation(): Promise<void> {
   const previous = settings.contextMenuTranslationEnabled === true;
   setButtonBusy(contextMenuTranslationButton, true);
   try {
-    const latest = await sendRuntimeMessage<ExtensionSettings>({ type: "GET_SETTINGS" });
-    settings = { ...latest, contextMenuTranslationEnabled: !previous };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await updatePopupSettings({ contextMenuTranslationEnabled: !previous });
   } catch (error) {
-    settings.contextMenuTranslationEnabled = previous;
     setStatus(error instanceof Error ? error.message : String(error));
   } finally {
     updateContextMenuTranslationButton();
@@ -560,7 +579,8 @@ async function toggleContextMenuTranslation(): Promise<void> {
 }
 
 function updateContextMenuTranslationButton(): void {
-  contextMenuTranslationButton.setAttribute("aria-pressed", String(settings.contextMenuTranslationEnabled === true));
+  const value = String(settings.contextMenuTranslationEnabled === true);
+  if (contextMenuTranslationButton.getAttribute("aria-pressed") !== value) contextMenuTranslationButton.setAttribute("aria-pressed", value);
 }
 
 async function toggleFloatingBall(): Promise<void> {
@@ -570,11 +590,7 @@ async function toggleFloatingBall(): Promise<void> {
   let saved = false;
   try {
     floatingBallEnabled = !floatingBallEnabled;
-    settings = {
-      ...settings,
-      floatingBallEnabled
-    };
-    await sendRuntimeMessage({ type: "SAVE_SETTINGS", settings });
+    await updatePopupSettings({ floatingBallEnabled });
     saved = true;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (pageTranslationAvailable && !activeTabIsPdf && tab.id) {
@@ -588,7 +604,6 @@ async function toggleFloatingBall(): Promise<void> {
   } catch (error) {
     if (!saved) {
       floatingBallEnabled = previous;
-      settings = { ...settings, floatingBallEnabled };
     }
     updateFloatingBallButton();
     setStatus(error instanceof Error ? error.message : String(error));
@@ -634,8 +649,9 @@ async function clearCache(): Promise<void> {
 }
 
 function updateParagraphModeButton(): void {
-  translationModeSelect.value = paragraphMode ? "paragraph" : settings.translationDisplayMode;
-  paragraphModeHint.hidden = !paragraphMode;
+  const value = paragraphMode ? "paragraph" : settings.translationDisplayMode;
+  if (translationModeSelect.value !== value) translationModeSelect.value = value;
+  if (paragraphModeHint.hidden !== !paragraphMode) paragraphModeHint.hidden = !paragraphMode;
 }
 
 function updatePageToggleButton(): void {
@@ -646,7 +662,7 @@ function updatePageToggleButton(): void {
 }
 
 function updateFloatingBallButton(): void {
-  floatingBallButton.setAttribute("aria-pressed", String(floatingBallEnabled));
+  if (floatingBallButton.getAttribute("aria-pressed") !== String(floatingBallEnabled)) floatingBallButton.setAttribute("aria-pressed", String(floatingBallEnabled));
 }
 
 function updatePageActionAvailability(): void {

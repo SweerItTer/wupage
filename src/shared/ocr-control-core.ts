@@ -1,5 +1,6 @@
 import { sendRuntimeMessage } from "./messaging";
 import { OCR_DESCRIPTION, type OcrStatus } from "./ocr";
+import { uiIconMarkup } from "./ui-icons";
 
 interface OcrControlOptions {
   elements?: { action: HTMLButtonElement; description: HTMLElement; status: HTMLElement; progress: HTMLProgressElement };
@@ -8,12 +9,9 @@ interface OcrControlOptions {
   shouldPoll?: () => boolean;
 }
 
-const wrench = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a5 5 0 0 0-6 6L3 17a2.8 2.8 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-3 3-4-4 3-3Z"/></svg>';
-const trash = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
-
 export function setImageTranslationToggle(toggle: HTMLButtonElement | HTMLInputElement, enabled: boolean): void {
   if (toggle instanceof HTMLInputElement) toggle.checked = enabled;
-  else toggle.setAttribute("aria-pressed", String(enabled));
+  else if (toggle.getAttribute("aria-pressed") !== String(enabled)) toggle.setAttribute("aria-pressed", String(enabled));
 
   const feature = toggle.closest<HTMLElement>(".image-feature");
   if (!feature?.hasAttribute("data-loading")) return;
@@ -26,7 +24,7 @@ export function setImageTranslationToggle(toggle: HTMLButtonElement | HTMLInputE
 function setupHelp(action: HTMLButtonElement, contents: HTMLElement[], helpId: string): { position: () => void; hide: () => void } {
   const help = document.createElement("div"); help.className = "ocr-help";
   const trigger = document.createElement("button");
-  trigger.type = "button"; trigger.className = "ocr-help-trigger"; trigger.textContent = "?";
+  trigger.type = "button"; trigger.className = "ocr-help-trigger"; trigger.innerHTML = uiIconMarkup("question-mark");
   trigger.setAttribute("aria-label", "图片翻译说明与模型状态");
   trigger.setAttribute("aria-describedby", helpId);
   const panel = document.createElement("div");
@@ -75,7 +73,7 @@ export function setupOcrControl(toggle: HTMLButtonElement | HTMLInputElement, on
   let refreshing: Promise<void> | undefined;
   toggle.disabled = true;
   button.disabled = true;
-  button.innerHTML = wrench;
+  button.innerHTML = uiIconMarkup("wrench");
 
   function render(value: OcrStatus): void {
     const wasInstalled = current?.state === "installed";
@@ -87,7 +85,7 @@ export function setupOcrControl(toggle: HTMLButtonElement | HTMLInputElement, on
     if (!installed) setImageTranslationToggle(toggle, false);
     button.disabled = acting || installing;
     button.dataset.state = value.state;
-    button.innerHTML = installed ? trash : wrench;
+    button.innerHTML = uiIconMarkup(installed ? "trash" : "wrench");
     button.title = installed ? "删除 OCR 模型并关闭图片翻译" : installing ? "正在安装 OCR 模型" : "安装 OCR 模型（约 20.5 MB）";
     button.setAttribute("aria-label", button.title);
     progress.hidden = !installing;

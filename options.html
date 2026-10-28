@@ -14,31 +14,31 @@
         </header>
         <nav class="settings-nav" aria-label="设置目录">
           <a href="#generalSettings" aria-controls="generalSettings" aria-current="page">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg>
+            <span data-wupage-icon="adjustment" aria-hidden="true"></span>
             <span>通用</span>
           </a>
           <a href="#selectionTranslationSettings" aria-controls="selectionTranslationSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M7 9h10M10 5v11M5 20h14"/></svg>
+            <span data-wupage-icon="font" aria-hidden="true"></span>
             <span>划词翻译</span>
           </a>
           <a href="#autoTranslationSettings" aria-controls="autoTranslationSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3-9 11h7l-1 7 10-12h-8z"/></svg>
+            <span data-wupage-icon="lightning" aria-hidden="true"></span>
             <span>自动翻译</span>
           </a>
           <a href="#shortcutSettings" aria-controls="shortcutSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h1m3 0h1m3 0h2M7 12h1m3 0h1m3 0h2M8 16h8"/></svg>
+            <span data-wupage-icon="keyboard" aria-hidden="true"></span>
             <span>快捷键</span>
           </a>
           <a href="#appearanceSettings" aria-controls="appearanceSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.5-3.3 1.5 1.5 0 0 1 1.2-2.5H17a4 4 0 0 0 4-4C21 6.7 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="11" cy="6.8" r=".7"/><circle cx="16" cy="8" r=".7"/><circle cx="6.8" cy="14.5" r=".7"/></svg>
+            <span data-wupage-icon="palette" aria-hidden="true"></span>
             <span>外观</span>
           </a>
           <a href="#providerSettings" aria-controls="providerSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg>
+            <span data-wupage-icon="internet" aria-hidden="true"></span>
             <span>翻译服务</span>
           </a>
           <a href="#performanceSettings" aria-controls="performanceSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19a9 9 0 1 1 14 0M12 13l4-5M8 19h8"/><circle cx="12" cy="13" r="1"/></svg>
+            <span data-wupage-icon="microchip" aria-hidden="true"></span>
             <span>性能设置</span>
           </a>
         </nav>
@@ -57,13 +57,13 @@
                 <label class="language-select">
                   <span class="visually-hidden">源语言</span>
                   <select id="sourceLang"></select>
-                  <span class="language-chevron" aria-hidden="true"></span>
+                  <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
                 </label>
-                <span class="language-direction" aria-hidden="true">→</span>
+                <span class="language-direction" aria-hidden="true" data-wupage-icon="arrow-right"></span>
                 <label class="language-select">
                   <span class="visually-hidden">目标语言</span>
                   <select id="targetLang"></select>
-                  <span class="language-chevron" aria-hidden="true"></span>
+                  <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
                 </label>
               </div>
             </div>
@@ -152,7 +152,7 @@
               <div class="auto-translation-master-group">
                 <label id="autoTranslateLabel" for="autoTranslateEnabled">启用自动翻译</label>
                 <div id="autoTranslateHelp" class="auto-translation-help">
-                  <button id="autoTranslateHelpTrigger" type="button" class="auto-translation-help-trigger" aria-label="自动翻译说明" aria-describedby="autoTranslateHelpPanel">?</button>
+                  <button id="autoTranslateHelpTrigger" type="button" class="auto-translation-help-trigger" aria-label="自动翻译说明" aria-describedby="autoTranslateHelpPanel"><span data-wupage-icon="question-mark" aria-hidden="true"></span></button>
                   <div id="autoTranslateHelpPanel" class="auto-translation-help-panel" role="tooltip" hidden>启用后，满足以下任意一项规则的网页会使用当前语言、翻译服务和显示模式自动翻译，并消耗对应服务的额度。手动恢复原文后，当前地址不会再次自动开启。</div>
                 </div>
                 <label class="setting-toggle auto-translation-master">
@@ -185,9 +185,9 @@
             <fieldset class="appearance-mode-field">
               <legend>界面模式</legend>
               <div class="appearance-modes">
-                <label><input type="radio" name="appearanceMode" value="system" checked /><span>跟随系统</span></label>
-                <label><input type="radio" name="appearanceMode" value="light" /><span>浅色</span></label>
-                <label><input type="radio" name="appearanceMode" value="dark" /><span>深色</span></label>
+                <label><input type="radio" name="appearanceMode" value="system" checked /><span data-wupage-icon="display" aria-hidden="true"></span><span>跟随系统</span></label>
+                <label><input type="radio" name="appearanceMode" value="light" /><span data-wupage-icon="light-mode" aria-hidden="true"></span><span>浅色</span></label>
+                <label><input type="radio" name="appearanceMode" value="dark" /><span data-wupage-icon="dark-mode" aria-hidden="true"></span><span>深色</span></label>
               </div>
             </fieldset>
             <div class="appearance-layout">
@@ -221,7 +221,7 @@
               <aside class="appearance-preview-area" aria-labelledby="appearancePreviewTitle">
                 <div class="appearance-section-heading"><h3 id="appearancePreviewTitle">效果预览</h3><span id="appearancePreviewTone" class="field-description">浅色</span></div>
                 <div id="appearancePreview" class="appearance-preview">
-                  <div class="appearance-preview-toolbar"><span class="appearance-preview-brand">W<span>WuPage</span></span><span class="appearance-preview-chip">英 → 中</span></div>
+                  <div class="appearance-preview-toolbar"><span class="appearance-preview-brand">W<span>WuPage</span></span><span class="appearance-preview-chip">英<span data-wupage-icon="arrow-right" aria-hidden="true"></span>中</span></div>
                   <div class="appearance-preview-bilingual">
                     <div class="appearance-preview-page appearance-preview-page-light"><span>浅色网页 · 双色对照</span><p>Discover something wonderful.</p><p class="appearance-preview-translation-light">发现生活中的美好。</p></div>
                     <div class="appearance-preview-page appearance-preview-page-dark"><span>深色网页 · 双色对照</span><p>Discover something wonderful.</p><p class="appearance-preview-translation-dark">发现生活中的美好。</p></div>
@@ -234,9 +234,9 @@
                     <p><i>n.</i> 不期而遇的美好；意外发现的珍宝</p>
                     <div class="appearance-preview-divider"></div>
                     <p class="appearance-preview-muted">在日常阅读中，遇见新的可能。</p>
-                    <div class="appearance-preview-button">翻译全文 <span>→</span></div>
+                    <div class="appearance-preview-button">翻译全文 <span data-wupage-icon="arrow-right" aria-hidden="true"></span></div>
                   </div>
-                  <div class="appearance-preview-feedback"><span>● 已完成翻译</span><span>请求失败，请重试</span></div>
+                  <div class="appearance-preview-feedback"><span><span data-wupage-icon="tick" aria-hidden="true"></span>已完成翻译</span><span><span data-wupage-icon="cross" aria-hidden="true"></span>请求失败，请重试</span></div>
                   <span class="appearance-preview-ball" title="悬停预览悬浮球颜色">译</span>
                 </div>
                 <p class="field-description">预览当前编辑的配色，悬停「译」可查看悬浮球悬停色。保存后同步更新界面、控件和已有双色译文。</p>
@@ -255,11 +255,11 @@
                   <button id="providerTrigger" class="provider-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
                     <span id="providerTriggerIcon" aria-hidden="true"></span>
                     <span id="providerTriggerLabel" class="provider-trigger-label"></span>
-                    <span class="provider-chevron" aria-hidden="true"></span>
+                    <span class="provider-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
                   </button>
                   <div id="providerMenu" class="provider-menu" role="listbox" hidden></div>
                 </div>
-                <button id="addProvider" class="icon-button add-provider" type="button" title="添加自定义供应商" aria-label="添加自定义供应商">+</button>
+                <button id="addProvider" class="icon-button add-provider" type="button" title="添加自定义供应商" aria-label="添加自定义供应商"><span data-wupage-icon="plus" aria-hidden="true"></span></button>
               </div>
             </div>
             <p id="disabledProviderHint" class="hint" role="status" hidden>此服务已停用，仍可编辑、保存和测试配置。启用后才会出现在翻译服务列表中。</p>
@@ -307,7 +307,7 @@
       <form id="providerDialogForm">
         <header class="dialog-header">
           <h2>添加自定义供应商</h2>
-          <button id="cancelProvider" class="dialog-close" type="button" title="关闭" aria-label="关闭">×</button>
+          <button id="cancelProvider" class="dialog-close" type="button" title="关闭" aria-label="关闭"><span data-wupage-icon="cross" aria-hidden="true"></span></button>
         </header>
         <label>显示名称 <input id="customProviderName" type="text" placeholder="例如：公司翻译服务" /></label>
         <label>供应商类型
@@ -331,7 +331,7 @@
       <form id="modelDialogForm">
         <header class="dialog-header">
           <h2>管理模型</h2>
-          <button id="cancelModel" class="dialog-close" type="button" aria-label="关闭">×</button>
+          <button id="cancelModel" class="dialog-close" type="button" aria-label="关闭"><span data-wupage-icon="cross" aria-hidden="true"></span></button>
         </header>
         <label>操作
           <select id="modelAction">

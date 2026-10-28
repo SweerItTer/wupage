@@ -11,12 +11,7 @@
       <div class="popup-top">
         <header>
           <h1>WuPage</h1>
-          <button id="openOptions" type="button" title="打开设置" aria-label="打开设置">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9.5 3-.6 2.2-1.5.9-2.2-.6-2.5 4.3 1.6 1.6v1.8l-1.6 1.6 2.5 4.3 2.2-.6 1.5.9.6 2.2h5l.6-2.2 1.5-.9 2.2.6 2.5-4.3-1.6-1.6v-1.8l1.6-1.6-2.5-4.3-2.2.6-1.5-.9-.6-2.2Z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
+          <button id="openOptions" type="button" title="打开设置" aria-label="打开设置"><span data-wupage-icon="settings" aria-hidden="true"></span></button>
         </header>
         <div class="language-field">
           <div class="language-pair">
@@ -24,18 +19,18 @@
               <span class="visually-hidden">源语言</span>
               <select id="sourceLang"></select>
               <span class="language-value" aria-hidden="true">自动检测</span>
-              <span class="language-chevron" aria-hidden="true"></span>
+              <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
             </label>
-            <span class="language-direction" aria-hidden="true">→</span>
+            <span class="language-direction" aria-hidden="true" data-wupage-icon="arrow-right"></span>
             <label class="language-select">
               <span class="visually-hidden">目标语言</span>
               <select id="targetLang"></select>
               <span class="language-value" aria-hidden="true">中文</span>
-              <span class="language-chevron" aria-hidden="true"></span>
+              <span class="language-chevron" data-wupage-icon="arrow-down-03" aria-hidden="true"></span>
             </label>
             <div class="language-automatic">
               <button id="autoTranslation" type="button" class="feature-button language-auto" data-loading disabled aria-label="自动翻译" title="按站点或页面语言规则自动翻译">自动</button>
-              <button id="addAutoTranslationSite" type="button" class="language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表">+</button>
+              <button id="addAutoTranslationSite" type="button" class="language-add-site" hidden disabled aria-label="将当前网站加入自动翻译列表" title="将当前网站加入自动翻译列表"><span data-wupage-icon="plus" aria-hidden="true"></span></button>
             </div>
           </div>
         </div>
@@ -99,10 +94,7 @@
           <span>GitHub</span>
         </button>
         <button id="openWebsite" type="button" class="footer-link">
-          <svg class="globe-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="9"></circle>
-            <path d="M3 12h18M12 3c2.4 2.46 3.6 5.46 3.6 9s-1.2 6.54-3.6 9c-2.4-2.46-3.6-5.46-3.6-9S9.6 5.46 12 3Z"></path>
-          </svg>
+          <span data-wupage-icon="internet" aria-hidden="true"></span>
           <span>官网</span>
         </button>
       </div>

@@ -24,10 +24,8 @@ export function setupShortcutSettings(root: HTMLElement): {
     button.setAttribute("role", "switch"); button.setAttribute("aria-label", `${label}快捷键`);
     switches.set(name, { button, row });
     button.addEventListener("click", () => {
-      if (!enabled[name] && name in values && !values[name as TranslationShortcut]) {
-        if (!apply(name as TranslationShortcut, DEFAULT_SHORTCUTS[name as TranslationShortcut])) return;
-        enabled[name] = true;
-      } else enabled[name] = !enabled[name];
+      if (!ready || (name in values && !values[name as TranslationShortcut])) return;
+      enabled[name] = !enabled[name];
       recording = undefined;
       refresh();
       status.textContent = enabled[name] ? "快捷键已开启，点击「保存」后生效。" : "快捷键已关闭，保留原按键；点击「保存」后生效。";
@@ -48,9 +46,10 @@ export function setupShortcutSettings(root: HTMLElement): {
       if (!row.input.hasAttribute("aria-invalid")) row.error.textContent = shortcutWarning(values[name]) ?? "";
     }
     for (const [name, { button, row }] of switches) {
-      button.disabled = !ready;
+      const empty = name in values && !values[name as TranslationShortcut];
+      button.disabled = !ready || empty;
       button.setAttribute("aria-checked", String(enabled[name]));
-      button.title = enabled[name] ? "关闭快捷键，保留当前按键" : "开启快捷键";
+      button.title = empty ? "请先设置快捷键，再启用" : enabled[name] ? "关闭快捷键，保留当前按键" : "开启快捷键";
       row.dataset.enabled = String(enabled[name]);
     }
   }

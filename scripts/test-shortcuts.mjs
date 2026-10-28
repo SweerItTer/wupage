@@ -116,12 +116,19 @@ try {
   await press('Alt+Shift+K'); await page.locator('.wupage-translation').first().waitFor();
   await press('Alt+Shift+K'); await page.waitForFunction(() => document.querySelectorAll('.wupage-translation').length === 0);
   await options.bringToFront();
-  await record('Delete'); await save('');
+  await record('Delete');
+  assert.equal(await pageSwitch.isDisabled(), true);
+  assert.equal(await pageSwitch.getAttribute('aria-checked'), 'false');
+  assert.equal(await field.inputValue(), '');
+  await save('');
+  await options.reload(); await options.locator('#shortcut-toggle-page-translation:enabled').waitFor();
+  assert.equal(await pageSwitch.isDisabled(), true);
+  assert.equal(await field.inputValue(), '');
   await press('Alt+Shift+K'); await page.waitForTimeout(150); assert.equal(await translationCount(), 0);
   await options.bringToFront(); await options.locator('#resetShortcuts').click(); await save('Alt+Shift+Y');
   await press('Alt+Shift+Y'); await page.locator('.wupage-translation').first().waitFor();
   await press('Alt+Shift+Y'); await page.waitForFunction(() => document.querySelectorAll('.wupage-translation').length === 0);
-  checks.push('live rebinding, clearing, restoring defaults without reloading the reading page');
+  checks.push('live rebinding, empty bindings stay disabled across reloads, explicit default restoration without reloading the reading page');
   await press('Alt+Shift+L'); await page.waitForFunction(() => document.documentElement.classList.contains('wupage-paragraph-mode'));
   await press('Alt+Shift+L'); await page.waitForFunction(() => !document.documentElement.classList.contains('wupage-paragraph-mode'));
   await page.locator('#selection').evaluate(element => {
