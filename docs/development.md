@@ -100,6 +100,7 @@ npm run test:page
 - 服务图标随扩展内联打包，弹窗、悬浮菜单和 PDF 共用带图标的服务选择器；设置页复用同一图标映射。图标来源与 MIT 许可保存在 `public/licenses/lobe-icons.txt`，显示时无需访问外部图片服务器。
 - `npm run test:page`：先运行 `npm run build`，再使用可选的 Playwright 与 Chromium 加载真实 MV3 扩展。支持 `PLAYWRIGHT_MODULE` 与 `PDF_TEST_BROWSER` 环境变量。
 - 使用本地页面和本地模拟翻译服务，覆盖两种窗口宽度、三种显示模式、代码占位符损坏恢复、隐藏内容与草稿排除、Ctrl 点击段落翻译、清除还原，以及动态原文更新后的迟到响应。切换显示模式不得新增翻译请求。
+- YouTube 新旧评论结构按整条正文翻译，双语译文另起一行；同时检查短评论、带链接的富文本、长译文自动折行及网页 `white-space: nowrap` 的继承隔离。
 - 同时检查 `dist/content.js` 能作为普通脚本解析，防止公共工具被拆成模块导入而导致内容脚本无法加载。报告保存在 `.npm-cache/page-translation/report.json`。
 - `npm run test:cards`：使用实际扩展和本地模拟服务，检查中英文界面下的混合语言卡片。覆盖 Flex/Grid 字段分离、标题字号与字重、作者链接、两种窗口宽度、三种显示模式和清除还原；匿名服务将整批判为目标语言时，未翻译项应独立重试。报告保存在 `.npm-cache/card-layout/`。
 - `npm run test:floating`：加载实际扩展，覆盖真实指针的 500 毫秒悬停延迟、离开取消、拖动与位置保存、悬浮球和弹窗的翻译中停止、迟到响应、原译文切换与缓存复用、动态列表、状态同步、缓存清理、失败重试、Debug、设置入口、键盘操作和小窗口。报告保存在 `.npm-cache/floating-interactions/`。

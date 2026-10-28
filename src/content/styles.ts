@@ -8,6 +8,7 @@ export function injectContentStyles(): void {
     .wupage-translation {
       box-sizing: border-box;
       max-width: 100%;
+      white-space: normal;
       overflow-wrap: break-word;
       word-break: break-word;
       pointer-events: none;

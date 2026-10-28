@@ -18,6 +18,12 @@ const { chromium } = await import(path.isAbsolute(moduleName) ? pathToFileURL(mo
 const calls = [];
 let damagedOnce = false;
 let releaseSlow;
+const commentSources = [
+  "Wonderful video!",
+  "The footage and the information in these videos are so valuable that I could easily watch even more than an hour. Please make the videos longer!",
+  "Please keep making these videos. See the previous episode for more details."
+];
+const commentTranslation = "这些视频中的素材和信息非常有价值，希望以后可以继续制作更长的视频。".repeat(6);
 const html = `<!doctype html><html><head><meta charset="utf-8"><title>Translation regression</title>
 <style>body{margin:24px;font:16px/1.5 sans-serif}main{max-width:700px}code{white-space:nowrap}</style></head><body><main>
 <h2>Review <em>request</em></h2>
@@ -38,6 +44,8 @@ const server = createServer(async (request, response) => {
     calls.push(input);
     if (input.texts.includes("Old pending message.")) await new Promise(resolve => { releaseSlow = resolve; });
     const translations = input.texts.map(text => {
+      if (commentSources.includes(text)) return commentTranslation;
+      if (text === "Short source.") return "A translated sentence that needs to wrap naturally inside a narrow container. ".repeat(6);
       if (!text.includes("WUPAGE")) return `译文：${text}`;
       if (!damagedOnce) {
         damagedOnce = true;
@@ -186,6 +194,83 @@ try {
   await message({ type: "CLEAR_TRANSLATION" });
   assert.equal(await page.locator("main").innerHTML(), originalLists);
 
+  // YouTube comments use inline text hosts even for long prose. Pair each
+  // whole comment with a separate line, including rich text and legacy hosts.
+  await page.locator("main").evaluate((node, sources) => {
+    const rich = 'Please <b>keep</b> making these videos. See <a href="/watch?v=example">the previous episode</a> for more details.';
+    node.innerHTML = `<style>
+      ytd-comment-view-model,ytd-comment-renderer{display:block;margin-bottom:20px}
+      #comments #content-text{display:inline;white-space:pre-wrap}
+      #nowrap-source{width:180px;white-space:nowrap}
+    </style><section id="comments">${["ytd-comment-view-model", "ytd-comment-renderer"].map(renderer => {
+      const host = renderer === "ytd-comment-renderer" ? "yt-formatted-string" : "yt-attributed-string";
+      return sources.map((source, index) => `<${renderer}><div class="comment-body"><${host} id="content-text" class="style-scope ${renderer}"><span>${index === 2 ? rich : source}</span></${host}></div></${renderer}>`).join("");
+    }).join("")}</section><div id="nowrap-source"><span>Short source.</span></div>`;
+  }, commentSources);
+  const originalComments = await page.locator("main").innerHTML();
+  const commentResult = await message({ type: "TRANSLATE_PAGE" });
+  assert.equal(commentResult.ok, true, JSON.stringify(commentResult));
+  assert.equal(commentResult.data.failed, 0);
+  assert.equal(commentResult.data.translated, 7);
+  const commentRequests = calls.length;
+  const commentReports = [];
+  for (const width of [1000, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const mode of ["bilingual", "bilingual-accent", "replace", "bilingual"]) {
+      await control.evaluate(async mode => {
+        const { data: settings } = await chrome.runtime.sendMessage({ type: "GET_SETTINGS" });
+        await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: { ...settings, translationDisplayMode: mode } });
+      }, mode);
+      await page.waitForFunction(mode => [...document.querySelectorAll(".wupage-translation")]
+        .every(node => node.dataset.wupageDisplayMode === mode), mode);
+      const comments = await page.locator("#comments #content-text").evaluateAll(hosts => hosts.map(host => {
+        const output = host.querySelector(".wupage-translation");
+        const rect = output.getBoundingClientRect();
+        const sourceRects = [];
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const text = walker.currentNode;
+          if (!text.textContent.trim() || text.parentElement.closest(".wupage-translation")) continue;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          sourceRects.push(...range.getClientRects());
+        }
+        return { outputs: host.querySelectorAll(".wupage-translation").length,
+          insideHost: output.parentElement === host, mode: output.dataset.wupageMode,
+          display: getComputedStyle(output).display, top: rect.top,
+          sourceBottom: Math.max(...sourceRects.map(rect => rect.bottom)) };
+      }));
+      assert.equal(comments.length, 6);
+      for (const comment of comments) {
+        assert.equal(comment.outputs, 1);
+        assert.equal(comment.insideHost, true);
+        assert.equal(comment.mode, "block");
+        assert.equal(comment.display, mode === "replace" ? "inline" : "block");
+        if (mode !== "replace") assert.ok(comment.top >= comment.sourceBottom - 1,
+          `Comment translation must start below the source: ${JSON.stringify({ width, mode, comment })}`);
+      }
+      assert.deepEqual(await page.locator("#comments a").evaluateAll(links => links.map(link => link.getAttribute("href"))),
+        ["/watch?v=example", "/watch?v=example"]);
+      assert.equal(await page.locator("#nowrap-source .wupage-translation").evaluate(node => getComputedStyle(node).whiteSpace), "normal");
+      assert.equal(await page.locator("main").evaluate(node => node.scrollWidth > node.clientWidth + 1), false);
+      assert.equal(calls.length, commentRequests, "Comment mode changes must reuse translations");
+      commentReports.push({ width, mode, comments });
+      if (mode === "bilingual") await page.screenshot({ path: path.join(output, `comments-${width}.png`), fullPage: true });
+    }
+  }
+  await message({ type: "CLEAR_TRANSLATION" });
+  assert.equal(await page.locator("main").innerHTML(), originalComments);
+  // The paragraph entry point must also select the full rich comment.
+  await message({ type: "SET_PARAGRAPH_MODE", enabled: true });
+  const richComment = page.locator("ytd-comment-view-model #content-text").nth(2);
+  await richComment.locator("b").dispatchEvent("click", { ctrlKey: true });
+  await richComment.locator(":scope > .wupage-translation:not(.wupage-translation-pending)").waitFor();
+  assert.equal(await page.locator(".wupage-translation").count(), 1);
+  assert.equal(await richComment.locator(".wupage-translation").textContent(), commentTranslation);
+  await message({ type: "CLEAR_TRANSLATION" });
+  await message({ type: "SET_PARAGRAPH_MODE", enabled: false });
+  assert.equal(await page.locator("main").innerHTML(), originalComments);
+
   // Check rendered colors in Chromium: jsdom does not resolve modern CSS color
   // spaces or inherited WebKit text fill, and tiny RGB changes look identical.
   await page.setViewportSize({ width: 1000, height: 900 });
@@ -277,10 +362,10 @@ try {
   await message({ type: "CLEAR_TRANSLATION" });
   assert.equal(await page.locator("main").textContent(), "Current message.");
   assert.deepEqual(errors, []);
-  const report = { browser: context.browser().version(), modes: modeReports, lists: listReports, colors: colorReports, placeholderRecovery: true, paragraphTranslation: true,
+  const report = { browser: context.browser().version(), modes: modeReports, lists: listReports, comments: commentReports, colors: colorReports, placeholderRecovery: true, paragraphTranslation: true,
     hiddenAndDraftTextExcluded: true, sourceRestored: true, staleResponseDiscarded: true, errors };
   await fs.writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2));
-  console.log("PASS: built MV3 extension; 6 viewport/mode combinations, 6 list layouts, 30 rendered color cases, protected text, drafts, Ctrl-click, source restoration and stale responses");
+  console.log("PASS: built MV3 extension; 6 viewport/mode combinations, 6 list layouts, 8 comment layouts, inherited nowrap, 30 rendered color cases, protected text, drafts, Ctrl-click, source restoration and stale responses");
 } finally {
   releaseSlow?.();
   await context?.close();
